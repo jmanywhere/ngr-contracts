@@ -44,12 +44,13 @@ pragma solidity ^0.8.0;
 
 interface INGR {
     struct UserInfo {
+        address user;
         uint initialDeposit;
-        uint growAmount;
+        uint helixAmount;
         uint depositTime;
-        uint liquidationTime;
-        uint cycle;
-        uint cyclePrice;
+        uint liquidationPrice;
+        uint redeposit;
+        bool liquidated;
     }
 
     event Deposit(address indexed user, uint256 amount, uint256 indexPosition);
@@ -57,23 +58,29 @@ interface INGR {
     event Liquidate(address indexed user, uint256 amount);
 
     /**
-     * @param amount The amount of Stable to Deposit
+     * @notice Deposit Stablecoin into the protocol to wait for ROI to be delivered
+     * @param amount The amount of stable coins to receive
+     * @param redeposit The amount of times the user will be redeposited at liquidation
+     * @dev This function calculates the CS to be added to the pool and the DS to be removed. Also calculates GROW to be received by user.
      */
-    function deposit(uint256 amount) external;
+    function deposit(uint256 amount, uint redeposit) external;
+
+    /**
+     * Seed the current NGR contract so it's easy to view
+     * @param amount The amount of USDT used to SEED the initial deposits
+     * @param inAndOut Whether to treat this as a deposit and immediate quit
+     */
+    function seed(uint amount, bool inAndOut) external;
 
     function earlyWithdraw() external;
 
     function liquidate() external;
 
-    function liquidateUser(address user) external; // Can be called by anyone, no restrictions need apply
-
-    function getDS() external view returns (uint256);
+    function getDS() external view returns (int256);
 
     function TCV() external view returns (uint256);
 
-    function currentCycle() external view returns (uint256);
-
-    function currentGrowPrice() external view returns (uint256);
+    function currentHelixPrice() external view returns (uint256);
 
     /**
      * @return The index of the next user to be liquidated
@@ -88,3 +95,6 @@ interface INGR {
         uint256 amount
     ) external view returns (uint256);
 }
+
+error NGR__InvalidAmount(uint256 amount);
+error NGR__CannotLiquidate();
