@@ -84,13 +84,14 @@ contract CounterTest is Test {
             address user,
             uint initialDeposit,
             uint helixAmount,
+            uint sparks,
             uint depositTime,
             uint liquidationPrice,
             uint liquidationCycle,
             bool redeposit,
             bool liquidated
         ) = ngr.positions(1);
-
+        assertEq(sparks, ngr.currentSparks());
         assertEq(liquidationCycle, 0);
         assertEq(redeposit, false);
         assertEq(liquidated, false);
@@ -130,7 +131,7 @@ contract CounterTest is Test {
         vm.prank(user4);
         ngr.deposit(201 ether, false);
 
-        (, , , , uint liqPrice, uint cycle, , ) = ngr.positions(1);
+        (, , , , , uint liqPrice, uint cycle, , ) = ngr.positions(1);
         console.log(
             "currentPrice: %s, cycle: %s",
             ngr.currentHelixPrice(),
@@ -143,5 +144,16 @@ contract CounterTest is Test {
         emit Liquidate(user1, 951.88 ether);
         ngr.liquidate();
         assertEq(ngr.canLiquidate(), true);
+    }
+
+    function test_early() public seed {
+        vm.startPrank(user1);
+        ngr.deposit(100 ether, false);
+
+        uint currentBalance = usdt.balanceOf(user1);
+
+        ngr.earlyWithdraw(0);
+
+        assertEq(usdt.balanceOf(user1), currentBalance + 94 ether);
     }
 }

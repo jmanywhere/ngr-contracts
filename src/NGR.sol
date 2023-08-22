@@ -14,7 +14,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     address[] public owners;
     address public liquidationOutWallet;
     IERC20 public usdt;
-
+    uint public totalHelix;
     uint public cycleCounter;
     uint private liquidationUser = 1;
     uint public totalPositions;
@@ -144,6 +144,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         amount -= fee;
         uint createdSparks = (amount * BASE_PRICE) / helixPrice;
         cumulativeSparks += createdSparks;
+        position.sparks = createdSparks;
 
         if (deltaSparks > 0) deltaSparks -= int(createdSparks);
         uint helixAmount = helixPrice;
@@ -161,6 +162,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         position.helixAmount =
             (amount * BASE_PRICE) /
             ((devFee * HELIX_ADJUST) / BASE_THOUSANDTH);
+        totalHelix += position.helixAmount;
         position.redeposit = redeposit;
 
         // If it's a seed, reset the current position made.
@@ -171,6 +173,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
                 depositTime: 0,
                 liquidationPrice: 0,
                 helixAmount: 0,
+                sparks: 0,
                 liquidationCycle: 0,
                 redeposit: false,
                 liquidated: false
@@ -189,13 +192,13 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         // If the position is already liquidated, skip it
         if (toLiquidate.liquidated) {
             liquidationUser++;
-            return liquidate();
+            return _liquidate();
         }
         // Set the liquidation flag
         toLiquidate.liquidated = true;
         // Remove Sparks/Helix from existence
         cumulativeSparks -= toLiquidate.helixAmount;
-
+        totalHelix -= toLiquidate.helixAmount;
         // Calculate the amount of USDT to be distributed
         uint liquidationAmount = (toLiquidate.initialDeposit * LIQ_OUT_TOTAL) /
             DOUBLE_BASE_PROPORTION;
@@ -252,14 +255,17 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         toWithdraw.liquidated = true;
         liquidationCounter++;
         // Remove Sparks/Helix from existence
-        cumulativeSparks -= toWithdraw.helixAmount;
+
+        cumulativeSparks -= toWithdraw.sparks;
+        totalHelix -= toWithdraw.helixAmount;
         // Calculate the amount of USDT to be distributed
         uint earlyLiquidationAmount = (toWithdraw.initialDeposit * LIQ_EARLY) /
             BASE_PROPORTION;
         emit EarlyWithdrawal(
             user,
             toWithdraw.initialDeposit,
-            earlyLiquidationAmount
+            earlyLiquidationAmount,
+            toWithdraw.initialDeposit - earlyLiquidationAmount
         );
         // Transfer USDT to user
         earlyLiquidationAmount =

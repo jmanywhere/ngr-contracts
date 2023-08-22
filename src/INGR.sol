@@ -47,6 +47,7 @@ interface INGR {
         address user; // Address of the user holding the position
         uint initialDeposit;
         uint helixAmount;
+        uint sparks;
         uint depositTime;
         uint liquidationPrice;
         uint liquidationCycle;
@@ -61,7 +62,8 @@ interface INGR {
     event EarlyWithdrawal(
         address indexed user,
         uint initialDeposit,
-        uint earlyFeeTaken
+        uint earlyFeeTaken,
+        uint totalWithdrawn
     );
 
     /**
