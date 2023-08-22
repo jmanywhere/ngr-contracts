@@ -43,36 +43,52 @@ pragma solidity ^0.8.0;
  */
 
 interface INGR {
-    struct UserInfo {
-        address user;
+    struct PositionInfo {
+        address user; // Address of the user holding the position
         uint initialDeposit;
         uint helixAmount;
         uint depositTime;
         uint liquidationPrice;
-        uint redeposit;
+        uint liquidationCycle;
+        bool redeposit;
         bool liquidated;
     }
 
     event Deposit(address indexed user, uint256 amount, uint256 indexPosition);
     event Withdraw(address indexed user, uint256 amount);
     event Liquidate(address indexed user, uint256 amount);
+    event Seed(uint amount);
+    event EarlyWithdrawal(
+        address indexed user,
+        uint initialDeposit,
+        uint earlyFeeTaken
+    );
 
     /**
      * @notice Deposit Stablecoin into the protocol to wait for ROI to be delivered
-     * @param amount The amount of stable coins to receive
-     * @param redeposit The amount of times the user will be redeposited at liquidation
+     * @param amount The amount of stable coins to receive.
+     * @param redeposit Should the user be auto liquidated.
      * @dev This function calculates the CS to be added to the pool and the DS to be removed. Also calculates GROW to be received by user.
      */
-    function deposit(uint256 amount, uint redeposit) external;
+    function deposit(uint256 amount, bool redeposit) external;
 
     /**
      * Seed the current NGR contract so it's easy to view
      * @param amount The amount of USDT used to SEED the initial deposits
-     * @param inAndOut Whether to treat this as a deposit and immediate quit
      */
-    function seed(uint amount, bool inAndOut) external;
+    function seed(uint amount) external;
 
-    function earlyWithdraw() external;
+    /**
+     * @notice Make a deposit and immediately withdraw without doing anything.
+     * @param amount The amount of USDT used to SEED the initial deposits
+     */
+    function seedAndQuit(uint amount) external;
+
+    /**
+     * @notice Withdraw from the protocol, without any profits and with a penalty to principal
+     * @param index The index of the user to withdraw from
+     */
+    function earlyWithdraw(uint index) external;
 
     function liquidate() external;
 
@@ -88,8 +104,9 @@ interface INGR {
     function currentUserPendingLiquidation() external view returns (uint256);
 
     function userLiquidationStatus(
-        address user
-    ) external view returns (bool indexEnabled, bool pastCycle, bool dsZero);
+        address user,
+        uint256 indexPosition
+    ) external view returns (bool indexEnabled, bool envLiquidationStatus);
 
     function calculateSparksOnDeposit(
         uint256 amount
@@ -98,3 +115,4 @@ interface INGR {
 
 error NGR__InvalidAmount(uint256 amount);
 error NGR__CannotLiquidate();
+error NGR__AlreadyLiquidated();
