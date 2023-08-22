@@ -112,6 +112,16 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         } while (canAdvance);
     }
 
+    function updateOwners(address[] memory _owners) external onlyOwner {
+        require(_owners.length > 0, "NGR: Invalid owners");
+        owners = _owners;
+    }
+
+    function updateLiquidationOutWallet(address _wallet) external onlyOwner {
+        require(_wallet != address(0), "NGR: Invalid wallet");
+        liquidationOutWallet = _wallet;
+    }
+
     //---------------------------
     //  Internal functions
     //---------------------------
