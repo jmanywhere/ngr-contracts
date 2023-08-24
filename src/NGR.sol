@@ -31,10 +31,10 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     int private deltaSparks;
     uint private lastSparkBeforeUpdate;
 
-    uint public MAX_DEPOSIT = 1_000 ether;
-    uint public MAX_Price = 1.2 ether;
-    uint public BASE_PRICE = 1 ether;
-    uint public MIN_DEPOSIT = 5 ether;
+    uint public constant MAX_DEPOSIT = 1_000 ether;
+    uint public constant MAX_PRICE = 1.2 ether;
+    uint public constant BASE_PRICE = 1 ether;
+    uint public constant MIN_DEPOSIT = 5 ether;
     uint private constant GOLDEN_RANGE_START = 1.05 ether - 1;
     uint private constant GOLDEN_RANGE_END = 1.1 ether + 1;
     uint private constant GOLDEN_RANGE_ADJUSTMENT = 0.1 ether;
@@ -156,7 +156,11 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         cumulativeSparks += createdSparks;
         position.sparks = createdSparks;
 
-        if (deltaSparks > 0) deltaSparks -= int(createdSparks);
+        if (deltaSparks > 0) {
+            deltaSparks -= int(createdSparks);
+        }
+        // delta sparks cant drop below 0 on a deposit
+        if (deltaSparks < 0) deltaSparks = 0;
         uint helixAmount = helixPrice;
         // GOLDEN RANGE Price Adjustment
         if (helixPrice > GOLDEN_RANGE_START && helixPrice < GOLDEN_RANGE_END)
@@ -164,7 +168,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         // devFee = liquidationPrice
         devFee = (helixAmount * LIQ_BEGIN) / BASE_PROPORTION;
         position.liquidationCycle = cycleCounter;
-        if (devFee > MAX_Price) devFee = devFee - MAX_Price + 1 ether;
+        if (devFee > MAX_PRICE) devFee = devFee - MAX_PRICE + 1 ether;
         position.liquidationPrice = getFinalLiquidationPrice(devFee);
         // If next liquidation price is lower than current price, increase cycle to avoid premature liquidation
         if (position.liquidationPrice < helixPrice) position.liquidationCycle++;
@@ -209,6 +213,10 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         // Remove Sparks/Helix from existence
         cumulativeSparks -= toLiquidate.helixAmount;
         totalHelix -= toLiquidate.helixAmount;
+        if (deltaSparks < 0) deltaSparks = 0;
+        else {
+            deltaSparks -= (int(toLiquidate.helixAmount) * 2) / 10;
+        }
         // Calculate the amount of USDT to be distributed
         uint liquidationAmount = (toLiquidate.initialDeposit * LIQ_OUT_TOTAL) /
             DOUBLE_BASE_PROPORTION;
@@ -301,13 +309,14 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
      */
     function reAdjustPrice() internal {
         uint currentPrice = currentHelixPrice();
-        if (currentPrice > MAX_Price) {
-            do {
-                currentPrice = (currentPrice % MAX_Price) + BASE_PRICE;
-            } while (currentPrice > MAX_Price);
+        if (currentPrice > MAX_PRICE) {
+            while (currentPrice > MAX_PRICE) {
+                currentPrice = (currentPrice % MAX_PRICE) + BASE_PRICE;
+            }
             cycleCounter++;
-            uint extraSparks = (cumulativeSparks * BASE_PRICE) / currentPrice;
-            deltaSparks += int(extraSparks);
+            uint sparkAdjustment = (BASE_PRICE * TCV()) / currentPrice;
+            sparkAdjustment -= cumulativeSparks;
+            deltaSparks += int(sparkAdjustment);
         }
     }
 
@@ -393,10 +402,10 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     //---------------------------
     //  Public VIEW functions
     //---------------------------
-    function currentHelixPrice() public view returns (uint) {
-        uint delta;
-        if (deltaSparks < 0) delta = cumulativeSparks - uint(-deltaSparks);
-        else delta = cumulativeSparks + uint(deltaSparks);
+    function currentHelixPrice() public view override returns (uint) {
+        uint delta = cumulativeSparks;
+        if (deltaSparks < 0) delta -= uint(-deltaSparks);
+        else delta += uint(deltaSparks);
 
         if (delta == 0) return BASE_PRICE;
 
@@ -438,5 +447,11 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         uint helixAmount = currentHelixPrice();
         uint createdSparks = helixAmount / amount;
         return createdSparks;
+    }
+
+    function getUserPositions(
+        address user
+    ) external view returns (uint[] memory) {
+        return userPositions[user];
     }
 }
