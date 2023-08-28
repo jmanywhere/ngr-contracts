@@ -77,7 +77,7 @@ contract CounterTest is Test {
 
     function test_deposit() public {
         vm.prank(user1);
-        ngr.deposit(MIN_DEPOSIT, false);
+        ngr.deposit(MIN_DEPOSIT);
 
         assertEq(ngr.totalPositions(), 1);
         (
@@ -88,13 +88,11 @@ contract CounterTest is Test {
             uint depositTime,
             uint liquidationPrice,
             uint liquidationCycle,
-            bool redeposit,
-            bool liquidated
+            uint liquidated
         ) = ngr.positions(1);
         assertEq(sparks, ngr.currentSparks());
         assertEq(liquidationCycle, 0);
-        assertEq(redeposit, false);
-        assertEq(liquidated, false);
+        assertEq(liquidated, 0);
         assertEq(user, user1);
         assertEq(initialDeposit, MIN_DEPOSIT);
         uint expectedHelix = uint(0.97 ether * MIN_DEPOSIT) /
@@ -114,24 +112,24 @@ contract CounterTest is Test {
 
     function test_liquidations() public seed {
         vm.startPrank(user1);
-        ngr.deposit(898 ether, false);
-        ngr.deposit(875 ether, false);
-        ngr.deposit(530 ether, false);
-        ngr.deposit(345 ether, false);
+        ngr.deposit(898 ether);
+        ngr.deposit(875 ether);
+        ngr.deposit(530 ether);
+        ngr.deposit(345 ether);
         vm.startPrank(user2);
-        ngr.deposit(361 ether, false);
-        ngr.deposit(900 ether, false);
-        ngr.deposit(115 ether, false);
-        ngr.deposit(604 ether, false);
+        ngr.deposit(361 ether);
+        ngr.deposit(900 ether);
+        ngr.deposit(115 ether);
+        ngr.deposit(604 ether);
         vm.startPrank(user3);
-        ngr.deposit(739 ether, false);
-        ngr.deposit(326 ether, false);
-        ngr.deposit(682 ether, false);
+        ngr.deposit(739 ether);
+        ngr.deposit(326 ether);
+        ngr.deposit(682 ether);
         vm.stopPrank();
         vm.prank(user4);
-        ngr.deposit(201 ether, false);
+        ngr.deposit(201 ether);
 
-        (, , , , , uint liqPrice, uint cycle, , ) = ngr.positions(1);
+        (, , , , , uint liqPrice, uint cycle, ) = ngr.positions(1);
         console.log(
             "currentPrice: %s, cycle: %s",
             ngr.currentHelixPrice(),
@@ -148,7 +146,7 @@ contract CounterTest is Test {
 
     function test_early() public seed {
         vm.startPrank(user1);
-        ngr.deposit(100 ether, false);
+        ngr.deposit(100 ether);
 
         uint currentBalance = usdt.balanceOf(user1);
 

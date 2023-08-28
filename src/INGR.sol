@@ -51,8 +51,16 @@ interface INGR {
         uint depositTime;
         uint liquidationPrice;
         uint liquidationCycle;
-        bool redeposit;
-        bool liquidated;
+        uint liquidated;
+    }
+    struct UserStats {
+        uint totalDeposited;
+        uint totalLiquidated;
+        uint totalWithdrawn;
+        uint totalPositions;
+        uint totalPositionsLiquidated;
+        uint totalPositionsWithdrawn;
+        uint lastLiquidatedPosition;
     }
 
     event Deposit(address indexed user, uint256 amount, uint256 indexPosition);
@@ -65,14 +73,15 @@ interface INGR {
         uint earlyFeeTaken,
         uint totalWithdrawn
     );
+    event UpdateOwners(address[] owners);
+    event UpdateLiquidationWallet(address indexed _old, address indexed _new);
 
     /**
      * @notice Deposit Stablecoin into the protocol to wait for ROI to be delivered
      * @param amount The amount of stable coins to receive.
-     * @param redeposit Should the user be auto liquidated.
      * @dev This function calculates the CS to be added to the pool and the DS to be removed. Also calculates GROW to be received by user.
      */
-    function deposit(uint256 amount, bool redeposit) external;
+    function deposit(uint256 amount) external;
 
     /**
      * Seed the current NGR contract so it's easy to view
