@@ -64,14 +64,14 @@ interface INGR {
     }
 
     event Deposit(address indexed user, uint256 amount, uint256 indexPosition);
-    event Withdraw(address indexed user, uint256 amount);
-    event Liquidate(address indexed user, uint256 amount);
+    event Liquidate(address indexed user, uint256 amount, uint position);
     event Seed(uint amount);
     event EarlyWithdrawal(
         address indexed user,
         uint initialDeposit,
         uint earlyFeeTaken,
-        uint totalWithdrawn
+        uint totalWithdrawn,
+        uint indexPosition
     );
     event UpdateOwners(address[] owners);
     event UpdateLiquidationWallet(address indexed _old, address indexed _new);
@@ -97,9 +97,9 @@ interface INGR {
 
     /**
      * @notice Withdraw from the protocol, without any profits and with a penalty to principal
-     * @param index The index of the user to withdraw from
+     * @dev only the last position of the user can be withdrawn
      */
-    function earlyWithdraw(uint index) external;
+    function earlyWithdraw() external;
 
     function liquidate() external;
 

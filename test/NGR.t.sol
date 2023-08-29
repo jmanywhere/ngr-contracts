@@ -150,7 +150,7 @@ contract CounterTest is Test {
 
         uint currentBalance = usdt.balanceOf(user1);
 
-        ngr.earlyWithdraw(0);
+        ngr.earlyWithdraw();
 
         assertEq(usdt.balanceOf(user1), currentBalance + 94 ether);
     }

@@ -34,10 +34,10 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     int private deltaSparks;
     uint private lastSparkBeforeUpdate;
 
-    uint public constant MAX_DEPOSIT = 1_000 ether;
+    uint public constant MAX_DEPOSIT = 500 ether;
     uint public constant MAX_PRICE = 1.2 ether;
     uint public constant BASE_PRICE = 1 ether;
-    uint public constant MIN_DEPOSIT = 5 ether;
+    uint public constant MIN_DEPOSIT = 100 ether;
     uint private constant GOLDEN_RANGE_START = 1.05 ether - 1;
     uint private constant GOLDEN_RANGE_END = 1.1 ether + 1;
     uint private constant GOLDEN_RANGE_ADJUSTMENT = 0.1 ether;
@@ -81,7 +81,8 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         reAdjustPrice();
     }
 
-    function earlyWithdraw(uint userIndex) external nonReentrant {
+    function earlyWithdraw() external nonReentrant {
+        uint userIndex = userPositions[msg.sender].length - 1;
         _earlyWithdraw(msg.sender, userIndex);
     }
 
@@ -234,7 +235,11 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         // Increase Counter for gap difference
         liquidationCounter++;
         // If user will redeposit, redeposit Amount (up to MAX_DEPOSIT)
-        emit Liquidate(toLiquidate.user, liquidationUserAmount);
+        emit Liquidate(
+            toLiquidate.user,
+            liquidationUserAmount,
+            liquidationUser - 1
+        );
         stats.totalLiquidated += liquidationUserAmount;
         usdt.transfer(toLiquidate.user, liquidationUserAmount);
 
@@ -265,7 +270,8 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             user,
             toWithdraw.initialDeposit,
             earlyLiquidationAmount,
-            toWithdraw.initialDeposit - earlyLiquidationAmount
+            toWithdraw.initialDeposit - earlyLiquidationAmount,
+            index
         );
         // Transfer USDT to user
         earlyLiquidationAmount =
