@@ -11,9 +11,11 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     mapping(uint position => PositionInfo) public positions;
     mapping(address user => uint[] positions) public userPositions;
     mapping(address user => UserStats) public userStats;
+    PositionInfo private consistentPosition;
 
     address[] public owners;
     address public liquidationOutWallet;
+    address private seedWallet;
     IERC20 public usdt;
     uint public totalHelix;
     uint public cycleCounter;
@@ -21,14 +23,15 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     uint public totalPositions;
     uint public totalLiquidations;
     uint public totalDeposits;
+    uint private consistentPositionId;
 
     uint private depositFee = 3;
     // Keep track of the current Gap counter;
     uint public depositCounter = 0;
     uint public liquidationCounter = 0;
 
-    uint private devProportion = 20;
-    uint private tcvProportion = 80;
+    uint private devProportion = 15;
+    uint private tcvProportion = 85;
 
     uint private cumulativeSparks;
     int private deltaSparks;
@@ -37,7 +40,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     uint public constant MAX_DEPOSIT = 500 ether;
     uint public constant MAX_PRICE = 1.2 ether;
     uint public constant BASE_PRICE = 1 ether;
-    uint public constant MIN_DEPOSIT = 100 ether;
+    uint public constant MIN_DEPOSIT = 50 ether;
     uint private constant GOLDEN_RANGE_START = 1.05 ether - 1;
     uint private constant GOLDEN_RANGE_END = 1.1 ether + 1;
     uint private constant GOLDEN_RANGE_ADJUSTMENT = 0.1 ether;
@@ -57,28 +60,54 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     uint private constant LIQ_OUT_USER = 106_00;
     bool private liqConditionCheck = true;
 
-    constructor(address _usdt, address liqOutWallet, address[] memory _owners) {
+    constructor(
+        address _usdt,
+        address liqOutWallet,
+        address reseedWallet,
+        address[] memory _owners
+    ) {
         liquidationOutWallet = liqOutWallet;
         usdt = IERC20(_usdt);
         owners = _owners;
+        seedWallet = reseedWallet;
     }
 
     //---------------------------
     //  External functions
     //---------------------------
     function deposit(uint amount) external nonReentrant {
-        uint devFee = _deposit(msg.sender, amount, false);
+        uint devFee = _deposit(msg.sender, amount, false, false);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
         reAdjustPrice();
+
+        if (
+            consistentPosition.initialDeposit == 0 ||
+            (consistentPosition.liquidated > 0)
+        ) {
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, true);
+            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
+            if (devFee > 0) distributeToOwners(devFee);
+            reAdjustPrice();
+        }
         _autoLiquidate(5, false);
     }
 
     function depositForUser(address user, uint amount) external nonReentrant {
-        uint devFee = _deposit(user, amount, false);
+        uint devFee = _deposit(user, amount, false, false);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
         reAdjustPrice();
+        if (
+            consistentPosition.initialDeposit == 0 ||
+            (consistentPosition.liquidated > 0)
+        ) {
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, true);
+            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
+            if (devFee > 0) distributeToOwners(devFee);
+            reAdjustPrice();
+        }
+        _autoLiquidate(5, false);
     }
 
     function earlyWithdraw() external nonReentrant {
@@ -93,14 +122,14 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     }
 
     function seed(uint amount) external nonReentrant {
-        uint devFee = _deposit(msg.sender, amount, true);
+        uint devFee = _deposit(msg.sender, amount, true, false);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
     }
 
     function seedAndQuit(uint amount) external nonReentrant {
         usdt.transferFrom(msg.sender, address(this), amount);
-        uint devFee = _deposit(msg.sender, amount, false);
+        uint devFee = _deposit(msg.sender, amount, false, false);
         if (devFee > 0) distributeToOwners(devFee);
         uint index = userPositions[msg.sender].length - 1;
         index = userPositions[msg.sender][index];
@@ -130,7 +159,8 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     function _deposit(
         address user,
         uint amount,
-        bool isSeed
+        bool isSeed,
+        bool consistent
     ) internal returns (uint devProp) {
         if (!isSeed && (amount < MIN_DEPOSIT || amount > MAX_DEPOSIT))
             revert NGR__InvalidAmount(amount);
@@ -143,15 +173,23 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         devProp = devFee;
         UserStats storage stats = userStats[user];
         // setup user
+        totalPositions++;
         if (!isSeed) {
             totalDeposits += amount;
-            totalPositions++;
-            userPositions[user].push(totalPositions);
-            stats.totalDeposited += amount;
             stats.totalPositions++;
+            stats.totalDeposited += amount;
+            if (!consistent) {
+                userPositions[user].push(totalPositions);
+            }
         }
 
-        PositionInfo storage position = positions[totalPositions];
+        PositionInfo storage position;
+        if (consistent) {
+            position = consistentPosition;
+            consistentPositionId = liquidationUser + 3;
+            position.liquidated = 0;
+        } else position = positions[totalPositions];
+
         position.user = user;
         position.initialDeposit = amount;
         position.depositTime = block.timestamp;
@@ -183,7 +221,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         totalHelix += position.helixAmount;
 
         // If it's a seed, reset the current position made.
-        if (isSeed) {
+        if (isSeed && !consistent) {
             positions[totalPositions] = PositionInfo({
                 user: address(0),
                 initialDeposit: 0,
@@ -199,17 +237,25 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             depositCounter++;
             emit Deposit(user, position.initialDeposit, totalPositions);
         }
+        if (isSeed || consistent) totalPositions--;
     }
 
     function _liquidate() internal {
-        PositionInfo storage toLiquidate = positions[liquidationUser];
+        uint currentLiquidationUser = liquidationUser;
+
+        PositionInfo storage toLiquidate;
+        bool consistent = currentLiquidationUser == consistentPositionId &&
+            consistentPosition.liquidated == 0;
+        if (consistent) {
+            toLiquidate = consistentPosition;
+        } else toLiquidate = positions[currentLiquidationUser];
         // If the position is already liquidated, skip it
         if (toLiquidate.liquidated > 0) {
             liquidationUser++;
             return _liquidate();
         }
         UserStats storage stats = userStats[toLiquidate.user];
-        stats.lastLiquidatedPosition = liquidationUser;
+        stats.lastLiquidatedPosition = currentLiquidationUser;
         stats.totalPositionsLiquidated++;
         // Set the liquidation flag
         toLiquidate.liquidated = block.timestamp;
@@ -231,7 +277,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         liquidationAmount = liquidationAmount - liquidationUserAmount;
 
         // Next position to liquidate
-        liquidationUser++;
+        if (!consistent) liquidationUser++;
         // Increase Counter for gap difference
         liquidationCounter++;
         // If user will redeposit, redeposit Amount (up to MAX_DEPOSIT)
@@ -241,6 +287,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             liquidationUser - 1
         );
         stats.totalLiquidated += liquidationUserAmount;
+        if (consistent) liquidationUserAmount = toLiquidate.initialDeposit;
         usdt.transfer(toLiquidate.user, liquidationUserAmount);
 
         // Transfer to Liquidation Wallet
@@ -253,10 +300,12 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         index = userPositions[user][index];
         // Index is only of user so there's no monkey business
         PositionInfo storage toWithdraw = positions[index];
+        // If TCV not enough, liquidate
+        if (TCV() < 4 * MAX_DEPOSIT)
+            revert NGR__CannotExit(TCV(), 4 * MAX_DEPOSIT);
         // If the position is already liquidated, skip it
-        if (toWithdraw.liquidated > 0) {
-            revert NGR__AlreadyLiquidated();
-        }
+        if (toWithdraw.liquidated > 0) revert NGR__AlreadyLiquidated();
+
         toWithdraw.liquidated = 1; // liquidated == 1 means it's an early withdraw
         liquidationCounter++;
         // Remove Sparks/Helix from existence
@@ -399,11 +448,14 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         uint gap = depositCounter - liquidationCounter;
         uint tcv = TCV();
         // Check gaps
-        if (gap > 20) return true;
-        bool tcvCanLiquidate = tcv > MAX_DEPOSIT * 5;
-        bool gapCanLiquidate = gap > 3;
+        bool normalTCVCheck = tcv / gap > MIN_DEPOSIT * 2;
+        bool normalTCVCheck2 = tcv > MAX_DEPOSIT * 5;
+        bool superGapCheck = gap > 25;
+        bool superTCVCheck = tcv > MAX_DEPOSIT * 7;
         // Check gaps and TCV
-        return tcvCanLiquidate && gapCanLiquidate;
+        return
+            (normalTCVCheck && normalTCVCheck2) ||
+            (superGapCheck && superTCVCheck);
     }
 
     function getFinalLiquidationPrice(

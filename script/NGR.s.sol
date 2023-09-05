@@ -8,6 +8,7 @@ import {IERC20} from "openzeppelin/token/ERC20/IERC20.sol";
 contract DeployNGR is Script {
     function run() public {
         uint256 deployerPrivate = vm.envUint("PRIVATE_KEY");
+        uint256 neo = vm.envUint("NEO_PKEY");
         address[] memory owners = new address[](3);
         owners[0] = 0x5a74Ed711403C3bF2e137AcDC191AC397Df52bca;
         owners[1] = 0x7Ff20b4E1Ad27C5266a929FC87b00F5cCB456374;
@@ -18,6 +19,7 @@ contract DeployNGR is Script {
         NGR ngr = new NGR(
             0xb6D07D107FF8e26A21E497Bf64c3239101FED3Cf,
             0xFe4c0A272046b4d6D140F60F7C6376a98BcB3511,
+            0x7Ff20b4E1Ad27C5266a929FC87b00F5cCB456374,
             owners
         );
 
@@ -31,5 +33,8 @@ contract DeployNGR is Script {
         ngr.seed(1 ether);
         ngr.seed(1 ether);
         vm.stopBroadcast();
+
+        vm.broadcast(neo);
+        usdt.approve(address(ngr), ~uint256(0));
     }
 }

@@ -33,7 +33,7 @@ contract CounterTest is Test {
         owners[0] = owner1;
         owners[1] = owner2;
         owners[2] = owner3;
-        ngr = new NGR(address(usdt), liq, owners);
+        ngr = new NGR(address(usdt), liq, owner2, owners);
         owners = new address[](4);
         owners[0] = user1;
         owners[1] = user2;

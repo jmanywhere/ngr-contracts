@@ -19,11 +19,7 @@ interface IERC20 {
      * @dev Emitted when the allowance of a `spender` for an `owner` is set by
      * a call to {approve}. `value` is the new allowance.
      */
-    event Approval(
-        address indexed owner,
-        address indexed spender,
-        uint256 value
-    );
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 
     /**
      * @dev Returns the amount of tokens in existence.
@@ -51,10 +47,7 @@ interface IERC20 {
      *
      * This value changes when {approve} or {transferFrom} are called.
      */
-    function allowance(
-        address owner,
-        address spender
-    ) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
 
     /**
      * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
@@ -81,11 +74,7 @@ interface IERC20 {
      *
      * Emits a {Transfer} event.
      */
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
 // OpenZeppelin Contracts (last updated v4.9.0) (access/Ownable.sol)
@@ -127,10 +116,7 @@ abstract contract Context {
 abstract contract Ownable is Context {
     address private _owner;
 
-    event OwnershipTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /**
      * @dev Initializes the contract setting the deployer as the initial owner.
@@ -177,10 +163,7 @@ abstract contract Ownable is Context {
      * Can only be called by the current owner.
      */
     function transferOwnership(address newOwner) public virtual onlyOwner {
-        require(
-            newOwner != address(0),
-            "Ownable: new owner is the zero address"
-        );
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
         _transferOwnership(newOwner);
     }
 
@@ -271,73 +254,68 @@ abstract contract ReentrancyGuard {
 }
 
 contract AutomationBase {
-    error OnlySimulatedBackend();
+  error OnlySimulatedBackend();
 
-    /**
-     * @notice method that allows it to be simulated via eth_call by checking that
-     * the sender is the zero address.
-     */
-    function preventExecution() internal view {
-        if (tx.origin != address(0)) {
-            revert OnlySimulatedBackend();
-        }
+  /**
+   * @notice method that allows it to be simulated via eth_call by checking that
+   * the sender is the zero address.
+   */
+  function preventExecution() internal view {
+    if (tx.origin != address(0)) {
+      revert OnlySimulatedBackend();
     }
+  }
 
-    /**
-     * @notice modifier that allows it to be simulated via eth_call by checking
-     * that the sender is the zero address.
-     */
-    modifier cannotExecute() {
-        preventExecution();
-        _;
-    }
+  /**
+   * @notice modifier that allows it to be simulated via eth_call by checking
+   * that the sender is the zero address.
+   */
+  modifier cannotExecute() {
+    preventExecution();
+    _;
+  }
 }
 
 interface AutomationCompatibleInterface {
-    /**
-     * @notice method that is simulated by the keepers to see if any work actually
-     * needs to be performed. This method does does not actually need to be
-     * executable, and since it is only ever simulated it can consume lots of gas.
-     * @dev To ensure that it is never called, you may want to add the
-     * cannotExecute modifier from KeeperBase to your implementation of this
-     * method.
-     * @param checkData specified in the upkeep registration so it is always the
-     * same for a registered upkeep. This can easily be broken down into specific
-     * arguments using `abi.decode`, so multiple upkeeps can be registered on the
-     * same contract and easily differentiated by the contract.
-     * @return upkeepNeeded boolean to indicate whether the keeper should call
-     * performUpkeep or not.
-     * @return performData bytes that the keeper should call performUpkeep with, if
-     * upkeep is needed. If you would like to encode data to decode later, try
-     * `abi.encode`.
-     */
-    function checkUpkeep(
-        bytes calldata checkData
-    ) external returns (bool upkeepNeeded, bytes memory performData);
+  /**
+   * @notice method that is simulated by the keepers to see if any work actually
+   * needs to be performed. This method does does not actually need to be
+   * executable, and since it is only ever simulated it can consume lots of gas.
+   * @dev To ensure that it is never called, you may want to add the
+   * cannotExecute modifier from KeeperBase to your implementation of this
+   * method.
+   * @param checkData specified in the upkeep registration so it is always the
+   * same for a registered upkeep. This can easily be broken down into specific
+   * arguments using `abi.decode`, so multiple upkeeps can be registered on the
+   * same contract and easily differentiated by the contract.
+   * @return upkeepNeeded boolean to indicate whether the keeper should call
+   * performUpkeep or not.
+   * @return performData bytes that the keeper should call performUpkeep with, if
+   * upkeep is needed. If you would like to encode data to decode later, try
+   * `abi.encode`.
+   */
+  function checkUpkeep(bytes calldata checkData) external returns (bool upkeepNeeded, bytes memory performData);
 
-    /**
-     * @notice method that is actually executed by the keepers, via the registry.
-     * The data returned by the checkUpkeep simulation will be passed into
-     * this method to actually be executed.
-     * @dev The input to this method should not be trusted, and the caller of the
-     * method should not even be restricted to any single registry. Anyone should
-     * be able call it, and the input should be validated, there is no guarantee
-     * that the data passed in is the performData returned from checkUpkeep. This
-     * could happen due to malicious keepers, racing keepers, or simply a state
-     * change while the performUpkeep transaction is waiting for confirmation.
-     * Always validate the data passed in.
-     * @param performData is the data which was passed back from the checkData
-     * simulation. If it is encoded, it can easily be decoded into other types by
-     * calling `abi.decode`. This data should not be trusted, and should be
-     * validated against the contract's current state.
-     */
-    function performUpkeep(bytes calldata performData) external;
+  /**
+   * @notice method that is actually executed by the keepers, via the registry.
+   * The data returned by the checkUpkeep simulation will be passed into
+   * this method to actually be executed.
+   * @dev The input to this method should not be trusted, and the caller of the
+   * method should not even be restricted to any single registry. Anyone should
+   * be able call it, and the input should be validated, there is no guarantee
+   * that the data passed in is the performData returned from checkUpkeep. This
+   * could happen due to malicious keepers, racing keepers, or simply a state
+   * change while the performUpkeep transaction is waiting for confirmation.
+   * Always validate the data passed in.
+   * @param performData is the data which was passed back from the checkData
+   * simulation. If it is encoded, it can easily be decoded into other types by
+   * calling `abi.decode`. This data should not be trusted, and should be
+   * validated against the contract's current state.
+   */
+  function performUpkeep(bytes calldata performData) external;
 }
 
-abstract contract AutomationCompatible is
-    AutomationBase,
-    AutomationCompatibleInterface
-{}
+abstract contract AutomationCompatible is AutomationBase, AutomationCompatibleInterface {}
 
 /**
  * @title Interface for NGR protocol
@@ -401,14 +379,14 @@ interface INGR {
     }
 
     event Deposit(address indexed user, uint256 amount, uint256 indexPosition);
-    event Withdraw(address indexed user, uint256 amount, uint position);
     event Liquidate(address indexed user, uint256 amount, uint position);
     event Seed(uint amount);
     event EarlyWithdrawal(
         address indexed user,
         uint initialDeposit,
         uint earlyFeeTaken,
-        uint totalWithdrawn
+        uint totalWithdrawn,
+        uint indexPosition
     );
     event UpdateOwners(address[] owners);
     event UpdateLiquidationWallet(address indexed _old, address indexed _new);
@@ -464,14 +442,17 @@ interface INGR {
 error NGR__InvalidAmount(uint256 amount);
 error NGR__CannotLiquidate();
 error NGR__AlreadyLiquidated();
+error NGR__CannotExit(uint tcv, uint target);
 
 contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     mapping(uint position => PositionInfo) public positions;
     mapping(address user => uint[] positions) public userPositions;
     mapping(address user => UserStats) public userStats;
+    PositionInfo private consistentPosition;
 
     address[] public owners;
     address public liquidationOutWallet;
+    address private seedWallet;
     IERC20 public usdt;
     uint public totalHelix;
     uint public cycleCounter;
@@ -479,14 +460,15 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     uint public totalPositions;
     uint public totalLiquidations;
     uint public totalDeposits;
+    uint private consistentPositionId;
 
     uint private depositFee = 3;
     // Keep track of the current Gap counter;
     uint public depositCounter = 0;
     uint public liquidationCounter = 0;
 
-    uint private devProportion = 20;
-    uint private tcvProportion = 80;
+    uint private devProportion = 15;
+    uint private tcvProportion = 85;
 
     uint private cumulativeSparks;
     int private deltaSparks;
@@ -495,7 +477,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     uint public constant MAX_DEPOSIT = 500 ether;
     uint public constant MAX_PRICE = 1.2 ether;
     uint public constant BASE_PRICE = 1 ether;
-    uint public constant MIN_DEPOSIT = 100 ether;
+    uint public constant MIN_DEPOSIT = 50 ether;
     uint private constant GOLDEN_RANGE_START = 1.05 ether - 1;
     uint private constant GOLDEN_RANGE_END = 1.1 ether + 1;
     uint private constant GOLDEN_RANGE_ADJUSTMENT = 0.1 ether;
@@ -515,28 +497,54 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     uint private constant LIQ_OUT_USER = 106_00;
     bool private liqConditionCheck = true;
 
-    constructor(address _usdt, address liqOutWallet, address[] memory _owners) {
+    constructor(
+        address _usdt,
+        address liqOutWallet,
+        address reseedWallet,
+        address[] memory _owners
+    ) {
         liquidationOutWallet = liqOutWallet;
         usdt = IERC20(_usdt);
         owners = _owners;
+        seedWallet = reseedWallet;
     }
 
     //---------------------------
     //  External functions
     //---------------------------
     function deposit(uint amount) external nonReentrant {
-        uint devFee = _deposit(msg.sender, amount, false);
+        uint devFee = _deposit(msg.sender, amount, false, false);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
         reAdjustPrice();
+
+        if (
+            consistentPosition.initialDeposit == 0 ||
+            (consistentPosition.liquidated > 0)
+        ) {
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, true);
+            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
+            if (devFee > 0) distributeToOwners(devFee);
+            reAdjustPrice();
+        }
         _autoLiquidate(5, false);
     }
 
     function depositForUser(address user, uint amount) external nonReentrant {
-        uint devFee = _deposit(user, amount, false);
+        uint devFee = _deposit(user, amount, false, false);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
         reAdjustPrice();
+        if (
+            consistentPosition.initialDeposit == 0 ||
+            (consistentPosition.liquidated > 0)
+        ) {
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, true);
+            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
+            if (devFee > 0) distributeToOwners(devFee);
+            reAdjustPrice();
+        }
+        _autoLiquidate(5, false);
     }
 
     function earlyWithdraw() external nonReentrant {
@@ -551,14 +559,14 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     }
 
     function seed(uint amount) external nonReentrant {
-        uint devFee = _deposit(msg.sender, amount, true);
+        uint devFee = _deposit(msg.sender, amount, true, false);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
     }
 
     function seedAndQuit(uint amount) external nonReentrant {
         usdt.transferFrom(msg.sender, address(this), amount);
-        uint devFee = _deposit(msg.sender, amount, false);
+        uint devFee = _deposit(msg.sender, amount, false, false);
         if (devFee > 0) distributeToOwners(devFee);
         uint index = userPositions[msg.sender].length - 1;
         index = userPositions[msg.sender][index];
@@ -588,7 +596,8 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     function _deposit(
         address user,
         uint amount,
-        bool isSeed
+        bool isSeed,
+        bool consistent
     ) internal returns (uint devProp) {
         if (!isSeed && (amount < MIN_DEPOSIT || amount > MAX_DEPOSIT))
             revert NGR__InvalidAmount(amount);
@@ -601,15 +610,23 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         devProp = devFee;
         UserStats storage stats = userStats[user];
         // setup user
+        totalPositions++;
         if (!isSeed) {
             totalDeposits += amount;
-            totalPositions++;
-            userPositions[user].push(totalPositions);
-            stats.totalDeposited += amount;
             stats.totalPositions++;
+            stats.totalDeposited += amount;
+            if (!consistent) {
+                userPositions[user].push(totalPositions);
+            }
         }
 
-        PositionInfo storage position = positions[totalPositions];
+        PositionInfo storage position;
+        if (consistent) {
+            position = consistentPosition;
+            consistentPositionId = liquidationUser + 3;
+            position.liquidated = 0;
+        } else position = positions[totalPositions];
+
         position.user = user;
         position.initialDeposit = amount;
         position.depositTime = block.timestamp;
@@ -641,7 +658,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         totalHelix += position.helixAmount;
 
         // If it's a seed, reset the current position made.
-        if (isSeed) {
+        if (isSeed && !consistent) {
             positions[totalPositions] = PositionInfo({
                 user: address(0),
                 initialDeposit: 0,
@@ -657,17 +674,25 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             depositCounter++;
             emit Deposit(user, position.initialDeposit, totalPositions);
         }
+        if (isSeed || consistent) totalPositions--;
     }
 
     function _liquidate() internal {
-        PositionInfo storage toLiquidate = positions[liquidationUser];
+        uint currentLiquidationUser = liquidationUser;
+
+        PositionInfo storage toLiquidate;
+        bool consistent = currentLiquidationUser == consistentPositionId &&
+            consistentPosition.liquidated == 0;
+        if (consistent) {
+            toLiquidate = consistentPosition;
+        } else toLiquidate = positions[currentLiquidationUser];
         // If the position is already liquidated, skip it
         if (toLiquidate.liquidated > 0) {
             liquidationUser++;
             return _liquidate();
         }
         UserStats storage stats = userStats[toLiquidate.user];
-        stats.lastLiquidatedPosition = liquidationUser;
+        stats.lastLiquidatedPosition = currentLiquidationUser;
         stats.totalPositionsLiquidated++;
         // Set the liquidation flag
         toLiquidate.liquidated = block.timestamp;
@@ -689,7 +714,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         liquidationAmount = liquidationAmount - liquidationUserAmount;
 
         // Next position to liquidate
-        liquidationUser++;
+        if (!consistent) liquidationUser++;
         // Increase Counter for gap difference
         liquidationCounter++;
         // If user will redeposit, redeposit Amount (up to MAX_DEPOSIT)
@@ -699,6 +724,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             liquidationUser - 1
         );
         stats.totalLiquidated += liquidationUserAmount;
+        if (consistent) liquidationUserAmount = toLiquidate.initialDeposit;
         usdt.transfer(toLiquidate.user, liquidationUserAmount);
 
         // Transfer to Liquidation Wallet
@@ -711,10 +737,12 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         index = userPositions[user][index];
         // Index is only of user so there's no monkey business
         PositionInfo storage toWithdraw = positions[index];
+        // If TCV not enough, liquidate
+        if (TCV() < 4 * MAX_DEPOSIT)
+            revert NGR__CannotExit(TCV(), 4 * MAX_DEPOSIT);
         // If the position is already liquidated, skip it
-        if (toWithdraw.liquidated > 0) {
-            revert NGR__AlreadyLiquidated();
-        }
+        if (toWithdraw.liquidated > 0) revert NGR__AlreadyLiquidated();
+
         toWithdraw.liquidated = 1; // liquidated == 1 means it's an early withdraw
         liquidationCounter++;
         // Remove Sparks/Helix from existence
@@ -728,7 +756,8 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             user,
             toWithdraw.initialDeposit,
             earlyLiquidationAmount,
-            toWithdraw.initialDeposit - earlyLiquidationAmount
+            toWithdraw.initialDeposit - earlyLiquidationAmount,
+            index
         );
         // Transfer USDT to user
         earlyLiquidationAmount =
@@ -856,11 +885,14 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         uint gap = depositCounter - liquidationCounter;
         uint tcv = TCV();
         // Check gaps
-        if (gap > 20) return true;
-        bool tcvCanLiquidate = tcv > MAX_DEPOSIT * 5;
-        bool gapCanLiquidate = gap > 3;
+        bool normalTCVCheck = tcv / gap > MIN_DEPOSIT * 2;
+        bool normalTCVCheck2 = tcv > MAX_DEPOSIT * 5;
+        bool superGapCheck = gap > 25;
+        bool superTCVCheck = tcv > MAX_DEPOSIT * 7;
         // Check gaps and TCV
-        return tcvCanLiquidate && gapCanLiquidate;
+        return
+            (normalTCVCheck && normalTCVCheck2) ||
+            (superGapCheck && superTCVCheck);
     }
 
     function getFinalLiquidationPrice(

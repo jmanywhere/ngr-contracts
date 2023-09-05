@@ -127,3 +127,4 @@ interface INGR {
 error NGR__InvalidAmount(uint256 amount);
 error NGR__CannotLiquidate();
 error NGR__AlreadyLiquidated();
+error NGR__CannotExit(uint tcv, uint target);
