@@ -448,7 +448,8 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     mapping(uint position => PositionInfo) public positions;
     mapping(address user => uint[] positions) public userPositions;
     mapping(address user => UserStats) public userStats;
-    PositionInfo private consistentPosition;
+    PositionInfo private consistentPosition3;
+    PositionInfo private consistentPosition4;
 
     address[] public owners;
     address public liquidationOutWallet;
@@ -461,6 +462,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     uint public totalLiquidations;
     uint public totalDeposits;
     uint private consistentPositionId;
+    uint private consistentPositionId2;
 
     uint private depositFee = 3;
     // Keep track of the current Gap counter;
@@ -513,16 +515,25 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     //  External functions
     //---------------------------
     function deposit(uint amount) external nonReentrant {
-        uint devFee = _deposit(msg.sender, amount, false, false);
+        uint devFee = _deposit(msg.sender, amount, false, 0);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
         reAdjustPrice();
 
         if (
-            consistentPosition.initialDeposit == 0 ||
-            (consistentPosition.liquidated > 0)
+            consistentPosition3.initialDeposit == 0 ||
+            (consistentPosition3.liquidated > 0)
         ) {
-            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, true);
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 1);
+            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
+            if (devFee > 0) distributeToOwners(devFee);
+            reAdjustPrice();
+        }
+        if (
+            consistentPosition4.initialDeposit == 0 ||
+            (consistentPosition4.liquidated > 0)
+        ) {
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 2);
             usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
             if (devFee > 0) distributeToOwners(devFee);
             reAdjustPrice();
@@ -531,19 +542,29 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     }
 
     function depositForUser(address user, uint amount) external nonReentrant {
-        uint devFee = _deposit(user, amount, false, false);
+        uint devFee = _deposit(user, amount, false, 0);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
         reAdjustPrice();
         if (
-            consistentPosition.initialDeposit == 0 ||
-            (consistentPosition.liquidated > 0)
+            consistentPosition3.initialDeposit == 0 ||
+            (consistentPosition3.liquidated > 0)
         ) {
-            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, true);
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 1);
             usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
             if (devFee > 0) distributeToOwners(devFee);
             reAdjustPrice();
         }
+        if (
+            consistentPosition4.initialDeposit == 0 ||
+            (consistentPosition4.liquidated > 0)
+        ) {
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 2);
+            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
+            if (devFee > 0) distributeToOwners(devFee);
+            reAdjustPrice();
+        }
+        autoSeed();
         _autoLiquidate(5, false);
     }
 
@@ -559,14 +580,14 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     }
 
     function seed(uint amount) external nonReentrant {
-        uint devFee = _deposit(msg.sender, amount, true, false);
+        uint devFee = _deposit(msg.sender, amount, true, 0);
         usdt.transferFrom(msg.sender, address(this), amount);
         if (devFee > 0) distributeToOwners(devFee);
     }
 
     function seedAndQuit(uint amount) external nonReentrant {
         usdt.transferFrom(msg.sender, address(this), amount);
-        uint devFee = _deposit(msg.sender, amount, false, false);
+        uint devFee = _deposit(msg.sender, amount, false, 0);
         if (devFee > 0) distributeToOwners(devFee);
         uint index = userPositions[msg.sender].length - 1;
         index = userPositions[msg.sender][index];
@@ -597,7 +618,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         address user,
         uint amount,
         bool isSeed,
-        bool consistent
+        uint8 consistent
     ) internal returns (uint devProp) {
         if (!isSeed && (amount < MIN_DEPOSIT || amount > MAX_DEPOSIT))
             revert NGR__InvalidAmount(amount);
@@ -615,15 +636,20 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             totalDeposits += amount;
             stats.totalPositions++;
             stats.totalDeposited += amount;
-            if (!consistent) {
+            if (consistent == 0) {
                 userPositions[user].push(totalPositions);
             }
         }
 
         PositionInfo storage position;
-        if (consistent) {
-            position = consistentPosition;
-            consistentPositionId = liquidationUser + 3;
+        if (consistent > 0) {
+            if (consistent == 1) {
+                position = consistentPosition3;
+                consistentPositionId = liquidationUser + 2;
+            } else {
+                position = consistentPosition4;
+                consistentPositionId2 = liquidationUser + 3;
+            }
             position.liquidated = 0;
         } else position = positions[totalPositions];
 
@@ -658,7 +684,7 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
         totalHelix += position.helixAmount;
 
         // If it's a seed, reset the current position made.
-        if (isSeed && !consistent) {
+        if (isSeed && consistent == 0) {
             positions[totalPositions] = PositionInfo({
                 user: address(0),
                 initialDeposit: 0,
@@ -674,17 +700,26 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             depositCounter++;
             emit Deposit(user, position.initialDeposit, totalPositions);
         }
-        if (isSeed || consistent) totalPositions--;
+        if (isSeed || consistent > 0) totalPositions--;
     }
 
     function _liquidate() internal {
         uint currentLiquidationUser = liquidationUser;
 
         PositionInfo storage toLiquidate;
-        bool consistent = currentLiquidationUser == consistentPositionId &&
-            consistentPosition.liquidated == 0;
-        if (consistent) {
-            toLiquidate = consistentPosition;
+        bool consistent = false;
+        if (
+            currentLiquidationUser == consistentPositionId &&
+            consistentPosition3.liquidated == 0
+        ) {
+            toLiquidate = consistentPosition3;
+            consistent = true;
+        } else if (
+            currentLiquidationUser == consistentPositionId2 &&
+            consistentPosition4.liquidated == 0
+        ) {
+            toLiquidate = consistentPosition4;
+            consistent = true;
         } else toLiquidate = positions[currentLiquidationUser];
         // If the position is already liquidated, skip it
         if (toLiquidate.liquidated > 0) {
@@ -724,7 +759,6 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             liquidationUser - 1
         );
         stats.totalLiquidated += liquidationUserAmount;
-        if (consistent) liquidationUserAmount = toLiquidate.initialDeposit;
         usdt.transfer(toLiquidate.user, liquidationUserAmount);
 
         // Transfer to Liquidation Wallet
@@ -784,6 +818,18 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
             canAdvance = canLiquidate();
             upkeepLiquidations++;
         } while (canAdvance && upkeepLiquidations < cycleAmount);
+    }
+
+    function autoSeed() private {
+        uint gaps = depositCounter - liquidationCounter;
+        if (gaps != 25) return;
+        uint halfTCV = TCV() / 2;
+        uint allowance = usdt.allowance(seedWallet, address(this));
+        uint balance = usdt.balanceOf(seedWallet);
+        if (allowance < halfTCV || balance < halfTCV) return;
+        uint devFee = _deposit(seedWallet, halfTCV, true, 0);
+        usdt.transferFrom(seedWallet, address(this), halfTCV);
+        if (devFee > 0) distributeToOwners(devFee);
     }
 
     /**

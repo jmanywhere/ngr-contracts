@@ -1,0 +1,2 @@
+DEPLOY Script 
+`forge script script/NGR.s.sol:DeployNGR --broadcast -vv --rpc-url bsc_testnet`

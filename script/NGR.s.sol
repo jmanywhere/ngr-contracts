@@ -19,7 +19,7 @@ contract DeployNGR is Script {
         NGR ngr = new NGR(
             0xb6D07D107FF8e26A21E497Bf64c3239101FED3Cf,
             0xFe4c0A272046b4d6D140F60F7C6376a98BcB3511,
-            0x7Ff20b4E1Ad27C5266a929FC87b00F5cCB456374,
+            0xDE4015049535C5322d92A1da6c4E38F213b002aF,
             owners
         );
 
