@@ -75,6 +75,11 @@ interface INGR {
     );
     event UpdateOwners(address[] owners);
     event UpdateLiquidationWallet(address indexed _old, address indexed _new);
+    event NotEnoughAllowanceOrBalance(
+        address wallet,
+        uint actualAllowance,
+        uint balance
+    );
 
     /**
      * @notice Deposit Stablecoin into the protocol to wait for ROI to be delivered

@@ -6,6 +6,7 @@ import "openzeppelin/access/Ownable.sol";
 import "openzeppelin/security/ReentrancyGuard.sol";
 import "chainlink/automation/AutomationCompatible.sol";
 import "./INGR.sol";
+import "forge-std/console.sol";
 
 contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     mapping(uint position => PositionInfo) public positions;
@@ -39,10 +40,10 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     int private deltaSparks;
     uint private lastSparkBeforeUpdate;
 
+    uint public constant MIN_DEPOSIT = 50 ether;
     uint public constant MAX_DEPOSIT = 500 ether;
     uint public constant MAX_PRICE = 1.2 ether;
     uint public constant BASE_PRICE = 1 ether;
-    uint public constant MIN_DEPOSIT = 50 ether;
     uint private constant GOLDEN_RANGE_START = 1.05 ether - 1;
     uint private constant GOLDEN_RANGE_END = 1.1 ether + 1;
     uint private constant GOLDEN_RANGE_ADJUSTMENT = 0.1 ether;
@@ -78,57 +79,11 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     //  External functions
     //---------------------------
     function deposit(uint amount) external nonReentrant {
-        uint devFee = _deposit(msg.sender, amount, false, 0);
-        usdt.transferFrom(msg.sender, address(this), amount);
-        if (devFee > 0) distributeToOwners(devFee);
-        reAdjustPrice();
-
-        if (
-            consistentPosition3.initialDeposit == 0 ||
-            (consistentPosition3.liquidated > 0)
-        ) {
-            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 1);
-            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
-            if (devFee > 0) distributeToOwners(devFee);
-            reAdjustPrice();
-        }
-        if (
-            consistentPosition4.initialDeposit == 0 ||
-            (consistentPosition4.liquidated > 0)
-        ) {
-            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 2);
-            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
-            if (devFee > 0) distributeToOwners(devFee);
-            reAdjustPrice();
-        }
-        _autoLiquidate(5, false);
+        _depositEnv(msg.sender, msg.sender, amount);
     }
 
     function depositForUser(address user, uint amount) external nonReentrant {
-        uint devFee = _deposit(user, amount, false, 0);
-        usdt.transferFrom(msg.sender, address(this), amount);
-        if (devFee > 0) distributeToOwners(devFee);
-        reAdjustPrice();
-        if (
-            consistentPosition3.initialDeposit == 0 ||
-            (consistentPosition3.liquidated > 0)
-        ) {
-            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 1);
-            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
-            if (devFee > 0) distributeToOwners(devFee);
-            reAdjustPrice();
-        }
-        if (
-            consistentPosition4.initialDeposit == 0 ||
-            (consistentPosition4.liquidated > 0)
-        ) {
-            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 2);
-            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
-            if (devFee > 0) distributeToOwners(devFee);
-            reAdjustPrice();
-        }
-        autoSeed();
-        _autoLiquidate(5, false);
+        _depositEnv(user, msg.sender, amount);
     }
 
     function earlyWithdraw() external nonReentrant {
@@ -176,6 +131,34 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
     //---------------------------
     //  Internal functions
     //---------------------------
+
+    function _depositEnv(address _user, address caller, uint amount) private {
+        uint devFee = _deposit(_user, amount, false, 0);
+        usdt.transferFrom(caller, address(this), amount);
+        if (devFee > 0) distributeToOwners(devFee);
+        reAdjustPrice();
+
+        if (
+            consistentPosition3.initialDeposit == 0 ||
+            (consistentPosition3.liquidated > 0)
+        ) {
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 1);
+            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
+            if (devFee > 0) distributeToOwners(devFee);
+            reAdjustPrice();
+        }
+        if (
+            consistentPosition4.initialDeposit == 0 ||
+            (consistentPosition4.liquidated > 0)
+        ) {
+            devFee = _deposit(seedWallet, MAX_DEPOSIT, false, 2);
+            usdt.transferFrom(seedWallet, address(this), MAX_DEPOSIT);
+            if (devFee > 0) distributeToOwners(devFee);
+            reAdjustPrice();
+        }
+        autoSeed();
+        _autoLiquidate(5, false);
+    }
 
     function _deposit(
         address user,
@@ -385,14 +368,18 @@ contract NGR is INGR, Ownable, ReentrancyGuard, AutomationCompatible {
 
     function autoSeed() private {
         uint gaps = depositCounter - liquidationCounter;
-        if (gaps != 25) return;
+
+        if (gaps < 25) return;
         uint halfTCV = TCV() / 2;
         uint allowance = usdt.allowance(seedWallet, address(this));
         uint balance = usdt.balanceOf(seedWallet);
-        if (allowance < halfTCV || balance < halfTCV) return;
-        uint devFee = _deposit(seedWallet, halfTCV, true, 0);
+
+        if (allowance < halfTCV || balance == 0) {
+            emit NotEnoughAllowanceOrBalance(seedWallet, allowance, balance);
+            return;
+        }
+        if (balance < halfTCV && balance > 0) halfTCV = balance;
         usdt.transferFrom(seedWallet, address(this), halfTCV);
-        if (devFee > 0) distributeToOwners(devFee);
     }
 
     /**
