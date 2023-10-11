@@ -3,7 +3,7 @@ pragma solidity 0.8.19;
 
 import "forge-std/Test.sol";
 import "openzeppelin/token/ERC20/presets/ERC20PresetFixedSupply.sol";
-import "../src/NGR.sol";
+import "../src/prevNGR/NGR.sol";
 
 contract NGRTest is Test {
     NGR public ngr;
