@@ -2,7 +2,7 @@
 pragma solidity 0.8.19;
 
 import "forge-std/Script.sol";
-import "../src/prevNGR/NGR.sol";
+import "../src/prevNGR/NGR_2.sol";
 import {IERC20} from "openzeppelin/token/ERC20/IERC20.sol";
 
 contract DeployNGR is Script {
@@ -16,22 +16,15 @@ contract DeployNGR is Script {
         IERC20 usdt = IERC20(0xb6D07D107FF8e26A21E497Bf64c3239101FED3Cf);
 
         vm.startBroadcast(deployerPrivate);
-        NGR ngr = new NGR(
+        NGR_v2 ngr = new NGR_v2(
             0xb6D07D107FF8e26A21E497Bf64c3239101FED3Cf,
             0xFe4c0A272046b4d6D140F60F7C6376a98BcB3511,
             0xDE4015049535C5322d92A1da6c4E38F213b002aF,
             owners
         );
+        usdt.transfer(address(ngr), 1 ether);
 
         usdt.approve(address(ngr), ~uint256(0));
-
-        ngr.seed(1 ether);
-        ngr.seed(1 ether);
-        ngr.seed(1 ether);
-        ngr.seed(1 ether);
-        ngr.seed(1 ether);
-        ngr.seed(1 ether);
-        ngr.seed(1 ether);
         vm.stopBroadcast();
 
         vm.broadcast(neo);
