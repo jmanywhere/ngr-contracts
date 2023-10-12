@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
 import "forge-std/Test.sol";
 import "openzeppelin/token/ERC20/presets/ERC20PresetFixedSupply.sol";
@@ -70,7 +70,7 @@ contract NGR_w_Grow is Test {
         vm.expectEmit();
         emit Deposit(user1, 0, 10 ether, 9.6 ether);
         vm.prank(user1);
-        ngr.deposit(10 ether, 4);
+        ngr.deposit(10 ether, 4, false);
 
         (
             address owner,
@@ -79,12 +79,16 @@ contract NGR_w_Grow is Test {
             uint amountDeposited,
             uint helix,
             uint liqPrice,
+            uint liquidatedAmount,
+            uint8 percent,
             bool isLiq,
             bool early
         ) = ngr.positions(0);
         assertEq(owner, user1);
         assertEq(depositTime, block.timestamp);
         assertEq(liqTime, 0);
+        assertEq(liquidatedAmount, 0);
+        assertEq(percent, 4);
         assertEq(amountDeposited, 10 ether);
         assertEq(helix, 9.6 ether);
         assertEq(liqPrice, 1_128472222222222222);
@@ -100,7 +104,7 @@ contract NGR_w_Grow is Test {
 
     function test_early_exit() public {
         vm.startPrank(user1);
-        ngr.deposit(10 ether, 4);
+        ngr.deposit(10 ether, 4, false);
 
         uint u1Balance = usdt.balanceOf(user1);
 
@@ -111,7 +115,7 @@ contract NGR_w_Grow is Test {
 
         ngr.earlyExit(0);
 
-        (, , uint liqTime, , , , bool isLiq, bool early) = ngr.positions(0);
+        (, , uint liqTime, , , , , , bool isLiq, bool early) = ngr.positions(0);
         assertEq(liqTime, block.timestamp);
         assertEq(isLiq, true);
         assertEq(early, true);
@@ -122,7 +126,7 @@ contract NGR_w_Grow is Test {
 
     function test_self_liquidate() public {
         vm.startPrank(user1);
-        ngr.deposit(10 ether, 6);
+        ngr.deposit(10 ether, 6, false);
 
         uint u1Balance = usdt.balanceOf(user1);
 
@@ -133,14 +137,14 @@ contract NGR_w_Grow is Test {
 
         vm.startPrank(user2);
         for (uint i = 0; i < 3; i++) {
-            ngr.deposit(10 ether, 4);
+            ngr.deposit(10 ether, 4, false);
         }
         vm.stopPrank();
 
         vm.prank(user1);
         ngr.liquidateSelf(0);
 
-        (, , uint liqTime, , , , bool isLiq, bool early) = ngr.positions(0);
+        (, , uint liqTime, , , , , , bool isLiq, bool early) = ngr.positions(0);
         assertEq(liqTime, block.timestamp);
         assertEq(isLiq, true);
         assertEq(early, false);
@@ -151,7 +155,7 @@ contract NGR_w_Grow is Test {
 
     function test_others_liquidate() public {
         vm.startPrank(user1);
-        ngr.deposit(10 ether, 6);
+        ngr.deposit(10 ether, 6, false);
 
         uint u3Balance = usdt.balanceOf(user3);
 
@@ -162,7 +166,7 @@ contract NGR_w_Grow is Test {
 
         vm.startPrank(user2);
         for (uint i = 0; i < 3; i++) {
-            ngr.deposit(10 ether, 4);
+            ngr.deposit(10 ether, 4, false);
         }
         vm.stopPrank();
 
@@ -173,5 +177,22 @@ contract NGR_w_Grow is Test {
 
         assertGt(usdt.balanceOf(user3), u3Balance);
         console.log("dif: %s", usdt.balanceOf(user3) - u3Balance);
+    }
+
+    function test_price_rise() public {
+        uint prv = vm.snapshot();
+        vm.startPrank(user1);
+        for (uint i = 0; i < 50; i++) {
+            ngr.deposit(10 ether, 4, false);
+            (, , , , , uint liqPrice, , , , ) = ngr.positions(i);
+            console.log(grow.calculatePrice(), i, liqPrice);
+        }
+
+        vm.revertTo(prv);
+        for (uint i = 0; i < 10; i++) {
+            ngr.deposit(100 ether, 4, false);
+            (, , , , , uint liqPrice, , , , ) = ngr.positions(i);
+            console.log(grow.calculatePrice(), i, liqPrice);
+        }
     }
 }
