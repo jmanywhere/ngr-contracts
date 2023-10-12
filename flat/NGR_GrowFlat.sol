@@ -295,6 +295,7 @@ error NGR_GROW__InvalidWithdraw();
 error NGR_GROW__LowPrice();
 error NGR_GROW__InvalidMinDeposit();
 error NGR_GROW__InvalidMaxDeposit();
+error NGR_GROW__InvalidDepositAmount();
 
 contract NGR_with_Grow is Ownable {
     //------------------------------------------------
@@ -308,6 +309,7 @@ contract NGR_with_Grow is Ownable {
         uint growAmount;
         uint liquidationPrice;
         uint liquidatedAmount;
+        uint8 liquidationPercent;
         bool isLiquidated;
         bool early;
     }
@@ -341,7 +343,7 @@ contract NGR_with_Grow is Ownable {
     uint public liquidatorAmount = 1;
     uint public totalAmount = 5;
 
-    uint public minSplitAmount = 20 ether;
+    uint public splitAmounts = 20 ether;
     uint public burnerAmount = 2 ether;
 
     uint public constant MIN_DEPOSIT = 10 ether;
@@ -415,6 +417,7 @@ contract NGR_with_Grow is Ownable {
         uint8 liqAmount,
         bool _autoReinvest
     ) external {
+        if (amount % 10 ether != 0) revert NGR_GROW__InvalidDepositAmount();
         if (amount < MIN_DEPOSIT) revert NGR_GROW__InvalidMinDeposit();
         if (amount > INIT_MAX_DEPOSIT) {
             uint tcv = usdt.balanceOf(address(grow));
@@ -426,11 +429,10 @@ contract NGR_with_Grow is Ownable {
             revert NGR_GROW__InvalidLiquidationAmount();
         }
         autoReinvest[msg.sender] = _autoReinvest;
-        if (amount > minSplitAmount) {
-            uint depositSplit = amount / 2;
-            _deposit(msg.sender, msg.sender, depositSplit, liqAmount);
-            _deposit(msg.sender, msg.sender, amount - depositSplit, liqAmount);
-        } else _deposit(msg.sender, msg.sender, amount, liqAmount);
+        uint splits = amount / splitAmounts;
+        for (uint i = 0; i < splits; i++) {
+            _deposit(msg.sender, msg.sender, splitAmounts, liqAmount);
+        }
 
         burnGrow();
         userStats[msg.sender].totalDeposited += amount;
@@ -442,6 +444,7 @@ contract NGR_with_Grow is Ownable {
         uint8 liqAmount,
         address _receiver
     ) external {
+        if (amount % 10 ether != 0) revert NGR_GROW__InvalidDepositAmount();
         if (amount < MIN_DEPOSIT) revert NGR_GROW__InvalidMinDeposit();
         if (amount > INIT_MAX_DEPOSIT) {
             uint tcv = usdt.balanceOf(address(grow));
@@ -452,11 +455,10 @@ contract NGR_with_Grow is Ownable {
         if (!acceptedReturns[liqAmount]) {
             revert NGR_GROW__InvalidLiquidationAmount();
         }
-        if (amount > minSplitAmount) {
-            uint depositSplit = amount / 2;
-            _deposit(_receiver, msg.sender, depositSplit, liqAmount);
-            _deposit(_receiver, msg.sender, amount - depositSplit, liqAmount);
-        } else _deposit(_receiver, msg.sender, amount, liqAmount);
+        uint splits = amount / splitAmounts;
+        for (uint i = 0; i < splits; i++) {
+            _deposit(_receiver, msg.sender, splitAmounts, liqAmount);
+        }
 
         burnGrow();
         userStats[msg.sender].totalDeposited += amount;
@@ -507,7 +509,7 @@ contract NGR_with_Grow is Ownable {
         liquidatedPos.liqTime = block.timestamp;
 
         uint totalSell = grow.sell(
-            liquidatedPos.owner,
+            address(this),
             liquidatedPos.growAmount,
             address(usdt)
         );
@@ -516,13 +518,25 @@ contract NGR_with_Grow is Ownable {
 
         uint liquidateUser = totalSell;
         if (totalSell > maxLiq) {
-            uint diff = totalSell - maxLiq / 2;
+            uint diff = (totalSell - maxLiq) / 2;
             liquidateUser = totalSell - diff;
             usdt.transfer(devWallet, diff);
         }
-        usdt.transfer(liquidatedPos.owner, liquidateUser);
 
         liquidatedPos.liquidatedAmount = liquidateUser;
+
+        if (autoReinvest[msg.sender]) {
+            uint extra = liquidateUser % splitAmounts;
+            liquidateUser -= extra;
+            _deposit(
+                msg.sender,
+                address(this),
+                liquidateUser,
+                liquidatedPos.liquidationPercent
+            );
+            if (extra > 0) usdt.transfer(liquidatedPos.owner, extra);
+        } else usdt.transfer(liquidatedPos.owner, liquidateUser);
+
         totalLiquidations += totalSell;
         emit LiquidatedSelf(msg.sender, position, totalSell);
     }
@@ -568,7 +582,12 @@ contract NGR_with_Grow is Ownable {
             userStats[liquidatedPos.owner].totalLiquidated += totalSell;
 
             if (autoReinvest[liquidatedPos.owner])
-                _deposit(liquidatedPos.owner, address(this), totalSell, 4);
+                _deposit(
+                    liquidatedPos.owner,
+                    address(this),
+                    totalSell,
+                    liquidatedPos.liquidationPercent
+                );
             else usdt.transfer(liquidatedPos.owner, totalSell);
             emit Liquidated(liquidatedPos.owner, _positions[i], totalSell);
         }
@@ -614,6 +633,7 @@ contract NGR_with_Grow is Ownable {
         created.amountDeposited = amount;
         created.growAmount = boughtGrow;
         created.liquidationPrice = liquidatedPrice;
+        created.liquidationPercent = liqAmount;
         emit Deposit(user, queuePosition, amount, boughtGrow);
         queuePosition++;
     }
