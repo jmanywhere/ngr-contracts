@@ -58,7 +58,6 @@ contract NGR_with_Grow is Ownable {
     uint public liquidatorAmount = 1;
     uint public totalAmount = 5;
 
-    uint public splitAmounts = 20 ether;
     uint public burnerAmount = 2 ether;
 
     uint public constant MIN_DEPOSIT = 10 ether;
@@ -144,9 +143,9 @@ contract NGR_with_Grow is Ownable {
             revert NGR_GROW__InvalidLiquidationAmount();
         }
         autoReinvest[msg.sender] = _autoReinvest;
-        uint splits = amount / splitAmounts;
+        uint splits = amount / MIN_DEPOSIT;
         for (uint i = 0; i < splits; i++) {
-            _deposit(msg.sender, msg.sender, splitAmounts, liqAmount);
+            _deposit(msg.sender, msg.sender, MIN_DEPOSIT, liqAmount);
         }
 
         burnGrow();
@@ -170,9 +169,9 @@ contract NGR_with_Grow is Ownable {
         if (!acceptedReturns[liqAmount]) {
             revert NGR_GROW__InvalidLiquidationAmount();
         }
-        uint splits = amount / splitAmounts;
+        uint splits = amount / MIN_DEPOSIT;
         for (uint i = 0; i < splits; i++) {
-            _deposit(_receiver, msg.sender, splitAmounts, liqAmount);
+            _deposit(_receiver, msg.sender, MIN_DEPOSIT, liqAmount);
         }
 
         burnGrow();
@@ -241,7 +240,7 @@ contract NGR_with_Grow is Ownable {
         liquidatedPos.liquidatedAmount = liquidateUser;
 
         if (autoReinvest[msg.sender]) {
-            uint extra = liquidateUser % splitAmounts;
+            uint extra = liquidateUser % MIN_DEPOSIT;
             liquidateUser -= extra;
             _deposit(
                 msg.sender,
