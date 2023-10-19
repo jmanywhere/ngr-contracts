@@ -157,8 +157,6 @@ contract NGR_w_Grow is Test {
         vm.startPrank(user1);
         ngr.deposit(10 ether, 6, false);
 
-        uint u3Balance = usdt.balanceOf(user3);
-
         vm.expectRevert(NGR_GROW__InvalidWithdraw.selector);
         ngr.liquidateSelf(1);
 
@@ -169,14 +167,15 @@ contract NGR_w_Grow is Test {
             ngr.deposit(10 ether, 4, false);
         }
         vm.stopPrank();
+        uint u3Balance = usdt.balanceOf(devWallet);
 
         uint[] memory toLiquidate = new uint[](1);
         toLiquidate[0] = 0;
-        vm.prank(user3);
+        vm.prank(devWallet);
         ngr.liquidateOthers(toLiquidate);
 
-        assertGt(usdt.balanceOf(user3), u3Balance);
-        console.log("dif: %s", usdt.balanceOf(user3) - u3Balance);
+        assertGt(usdt.balanceOf(devWallet), u3Balance);
+        console.log("dif: %s", usdt.balanceOf(devWallet) - u3Balance);
     }
 
     function test_price_rise() public {
