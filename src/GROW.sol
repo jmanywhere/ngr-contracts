@@ -393,19 +393,19 @@ contract GrowToken is IGrow, ReentrancyGuard, Ownable {
         // calculate price change
         uint256 oldPrice = _calculatePrice();
         // fee exempt
-        bool takeFee = !isFeeExempt[msg.sender];
+        bool takeFee = isFeeExempt[msg.sender];
 
         uint tokensToSwap;
         // tokens post fee to swap for underlying asset
         _burn(msg.sender, tokenAmount);
-        if (!takeFee) {
-            require(tokenAmount > 100, "Minimum of 100");
-            tokensToSwap = tokenAmount - 100;
-        } else {
+        if (takeFee) {
             uint taxFee = (tokenAmount * sellFee) / feeDenominator;
             tokensToSwap = tokenAmount - taxFee;
             taxFee = (taxFee * devShare) / sharesDenominator;
             _mint(dev, taxFee);
+        } else {
+            require(tokenAmount > 100, "Minimum of 100");
+            tokensToSwap = tokenAmount - 100;
         }
 
         // value of taxed tokens
