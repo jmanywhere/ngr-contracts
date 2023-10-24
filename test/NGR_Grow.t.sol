@@ -18,6 +18,10 @@ contract NGR_w_Grow is Test {
     address user3 = makeAddr("user3");
     address burner = makeAddr("burner");
 
+    address owner1 = makeAddr("owner1");
+    address owner2 = makeAddr("owner2");
+    address owner3 = makeAddr("owner3");
+
     // ------------------------------------------------
     // Events
     // ------------------------------------------------
@@ -37,12 +41,20 @@ contract NGR_w_Grow is Test {
         );
         address[] memory stables = new address[](1);
         stables[0] = address(usdt);
+        address[] memory owners = new address[](3);
+        owners[0] = owner1;
+        owners[1] = owner2;
+        owners[2] = owner3;
+        uint[] memory shares = new uint[](3);
+        shares[0] = 45;
+        shares[1] = 35;
+        shares[2] = 20;
 
         usdt.transfer(user1, 1_000 ether);
         usdt.transfer(user2, 1_000 ether);
         usdt.transfer(user3, 1_000 ether);
 
-        grow = new GrowToken(stables, devWallet);
+        grow = new GrowToken(stables, owners, shares, devWallet);
         usdt.transfer(address(grow), 1 ether);
         usdt.transfer(burner, 10_000 ether);
 
@@ -70,7 +82,7 @@ contract NGR_w_Grow is Test {
         vm.expectEmit();
         emit Deposit(user1, 0, 10 ether, 9.6 ether);
         vm.prank(user1);
-        ngr.deposit(10 ether, 4, false);
+        ngr.deposit(10 ether, false);
 
         (
             address owner,
@@ -80,7 +92,6 @@ contract NGR_w_Grow is Test {
             uint helix,
             uint liqPrice,
             uint liquidatedAmount,
-            uint8 percent,
             bool isLiq,
             bool early
         ) = ngr.positions(0);
@@ -88,12 +99,15 @@ contract NGR_w_Grow is Test {
         assertEq(depositTime, block.timestamp);
         assertEq(liqTime, 0);
         assertEq(liquidatedAmount, 0);
-        assertEq(percent, 4);
         assertEq(amountDeposited, 10 ether);
         assertEq(helix, 9.6 ether);
         assertEq(liqPrice, 1_128472222222222222);
         assertEq(isLiq, false);
         assertEq(early, false);
+
+        assertGt(grow.balanceOf(owner1), (10 ether * 45) / 100_00);
+        assertGt(grow.balanceOf(owner2), (10 ether * 35) / 100_00);
+        assertGt(grow.balanceOf(owner3), (10 ether * 20) / 100_00);
 
         uint totalDeposits = ngr.totalDeposits();
         assertEq(totalDeposits, 10 ether);
@@ -104,7 +118,7 @@ contract NGR_w_Grow is Test {
 
     function test_early_exit() public {
         vm.startPrank(user1);
-        ngr.deposit(10 ether, 4, false);
+        ngr.deposit(10 ether, false);
 
         uint u1Balance = usdt.balanceOf(user1);
 
@@ -115,7 +129,7 @@ contract NGR_w_Grow is Test {
 
         ngr.earlyExit(0);
 
-        (, , uint liqTime, , , , , , bool isLiq, bool early) = ngr.positions(0);
+        (, , uint liqTime, , , , , bool isLiq, bool early) = ngr.positions(0);
         assertEq(liqTime, block.timestamp);
         assertEq(isLiq, true);
         assertEq(early, true);
@@ -126,25 +140,25 @@ contract NGR_w_Grow is Test {
 
     function test_self_liquidate() public {
         vm.startPrank(user1);
-        ngr.deposit(10 ether, 6, false);
+        ngr.deposit(10 ether, false);
 
         uint u1Balance = usdt.balanceOf(user1);
 
         vm.expectRevert(NGR_GROW__InvalidWithdraw.selector);
-        ngr.liquidateSelf(1);
+        // ngr.liquidateSelf(1);
 
         skip(1 days);
 
         vm.startPrank(user2);
         for (uint i = 0; i < 3; i++) {
-            ngr.deposit(10 ether, 4, false);
+            ngr.deposit(10 ether, false);
         }
         vm.stopPrank();
 
         vm.prank(user1);
-        ngr.liquidateSelf(0);
+        // ngr.liquidateSelf(0);
 
-        (, , uint liqTime, , , , , , bool isLiq, bool early) = ngr.positions(0);
+        (, , uint liqTime, , , , , bool isLiq, bool early) = ngr.positions(0);
         assertEq(liqTime, block.timestamp);
         assertEq(isLiq, true);
         assertEq(early, false);
@@ -155,16 +169,16 @@ contract NGR_w_Grow is Test {
 
     function test_others_liquidate() public {
         vm.startPrank(user1);
-        ngr.deposit(10 ether, 6, false);
+        ngr.deposit(10 ether, false);
 
         vm.expectRevert(NGR_GROW__InvalidWithdraw.selector);
-        ngr.liquidateSelf(1);
+        // ngr.liquidateSelf(1);
 
         skip(1 days);
 
         vm.startPrank(user2);
         for (uint i = 0; i < 3; i++) {
-            ngr.deposit(10 ether, 4, false);
+            ngr.deposit(10 ether, false);
         }
         vm.stopPrank();
         uint u3Balance = usdt.balanceOf(devWallet);
@@ -172,7 +186,7 @@ contract NGR_w_Grow is Test {
         uint[] memory toLiquidate = new uint[](1);
         toLiquidate[0] = 0;
         vm.prank(devWallet);
-        ngr.liquidateOthers(toLiquidate);
+        ngr.liquidatePositions(toLiquidate);
 
         assertGt(usdt.balanceOf(devWallet), u3Balance);
         console.log("dif: %s", usdt.balanceOf(devWallet) - u3Balance);
@@ -182,15 +196,15 @@ contract NGR_w_Grow is Test {
         uint prv = vm.snapshot();
         vm.startPrank(user1);
         for (uint i = 0; i < 50; i++) {
-            ngr.deposit(10 ether, 4, false);
-            (, , , , , uint liqPrice, , , , ) = ngr.positions(i);
+            ngr.deposit(10 ether, false);
+            (, , , , , uint liqPrice, , , ) = ngr.positions(i);
             console.log(grow.calculatePrice(), i, liqPrice);
         }
 
         vm.revertTo(prv);
         for (uint i = 0; i < 10; i++) {
-            ngr.deposit(100 ether, 4, false);
-            (, , , , , uint liqPrice, , , , ) = ngr.positions(i);
+            ngr.deposit(100 ether, false);
+            (, , , , , uint liqPrice, , , ) = ngr.positions(i);
             console.log(grow.calculatePrice(), i, liqPrice);
         }
     }

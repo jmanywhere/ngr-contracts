@@ -12,3 +12,7 @@
 
 `forge flatten src/NGR.sol -o flat/FlatNGR.sol`
 `forge flatten src/NGR_2.sol -o flat/FlatNGR2.sol`
+
+## Final Deployment script
+
+`forge script script/DeployNGR2.s.sol:DeployNGR2 --private-key $PRIVATE_KEY --rpc-url $TESTNET_RPC_URL --broadcast -vv`

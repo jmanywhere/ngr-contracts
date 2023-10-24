@@ -12,6 +12,7 @@ error NGR_GROW__InvalidMinDeposit();
 error NGR_GROW__InvalidMaxDeposit();
 error NGR_GROW__InvalidDepositAmount();
 error NGR_GROW__LiquidatorMinDepositNotReached();
+error NGR_GROW__LiquidationTooFast();
 
 contract NGR_with_Grow is Ownable {
     //------------------------------------------------
@@ -25,6 +26,7 @@ contract NGR_with_Grow is Ownable {
         uint growAmount;
         uint liquidationPrice;
         uint liquidatedAmount;
+        uint8 liquidationPercent;
         bool isLiquidated;
         bool early;
     }
@@ -35,20 +37,23 @@ contract NGR_with_Grow is Ownable {
         uint totalEarly;
         uint otherLiquidationProfits;
     }
-    struct UserPositions {
-        uint mainDeposit;
-        uint liquidationStartPrice;
-        uint positionId;
+    struct UserLiquidation {
+        uint[] accLiquidations;
+        uint[] accMaxLiquidationValues;
+        uint lastClaimTime;
+        uint lastLiqIndex;
+        uint totalLiquidated;
     }
     //------------------------------------------------
     // State Variables
     //------------------------------------------------
     mapping(uint8 => bool) public acceptedReturns;
     mapping(uint posId => Position) public positions;
+    mapping(address => uint[]) public userPositions;
     mapping(address => UserStats) public userStats;
     mapping(address => bool) public autoReinvest;
     mapping(address => bool) public isLiquidator;
-    mapping(address => UserPositions[]) public userMainDeposits;
+    mapping(address => UserLiquidation) public liquidationStats;
 
     IGrow public immutable grow;
     IERC20 public immutable usdt;
@@ -60,7 +65,6 @@ contract NGR_with_Grow is Ownable {
 
     uint public totalDeposits;
     uint public totalLiquidations;
-    uint public totalPaidToLiquidators;
 
     uint public liquidatorAmount = 1;
     uint public totalAmount = 5;
@@ -69,18 +73,8 @@ contract NGR_with_Grow is Ownable {
     uint public minLiquidatorThreshold = 50 ether;
 
     uint public constant MIN_DEPOSIT = 10 ether;
-    uint public constant TCV_DEPOSIT_LIMIT_1 = 500 ether;
-    uint public constant TCV_DEPOSIT_LIMIT_2 = 1_000 ether;
-    uint public constant DEPOSIT_LIMIT_2 = 25 ether;
-    uint public constant DEPOSIT_LIMIT_1 = 50 ether;
-
-    uint public constant INIT_MAX_DEPOSIT = 500 ether;
+    uint public constant INIT_MAX_DEPOSIT = 100 ether;
     uint public constant MAX_DEPOSIT_LIMIT = 1_000 ether;
-    uint public constant TARGET_PROFIT = 6;
-    uint public constant MIN_PROFIT = 5;
-    uint private constant FULL_MIN_PROFIT = 105;
-    uint private constant FULL_TARGET_PROFIT = 106;
-    uint private constant GROW_SELL_TOTAL_RCV = 94;
 
     uint public constant PERCENT = 100;
     uint private constant MAGNIFIER = 1 ether;
@@ -115,29 +109,7 @@ contract NGR_with_Grow is Ownable {
         uint totalLiquidated
     );
     event SelfAutoReinvest(address indexed owner, bool autoReinvest);
-
-    //------------------------------------------------
-    // Modifiers
-    //------------------------------------------------
-    modifier checkAmount(uint amount) {
-        // Can only deposit FULL token amounts
-        if (amount % 1 ether != 0) revert NGR_GROW__InvalidDepositAmount();
-        // Minimum Deposit of 10$ (10 USDT)
-        if (amount < MIN_DEPOSIT) revert NGR_GROW__InvalidMinDeposit();
-        // Max deposit determined by TCV
-        uint tcv = usdt.balanceOf(address(grow));
-        // TCV above 1000$ (1000 USDT)
-        if (tcv > TCV_DEPOSIT_LIMIT_2) {
-            if (amount > tcv / 10) revert NGR_GROW__InvalidMaxDeposit();
-            // TCV above 500$ (1000 USDT)
-        } else if (tcv > TCV_DEPOSIT_LIMIT_1) {
-            if (amount > DEPOSIT_LIMIT_1) revert NGR_GROW__InvalidMaxDeposit();
-            // Initial Max: 25$ (25 USDT)
-        } else if (amount > DEPOSIT_LIMIT_2)
-            revert NGR_GROW__InvalidMaxDeposit();
-
-        _;
-    }
+    event LiquidVesting(address indexed owner, uint amount);
 
     //------------------------------------------------
     // Constructor
@@ -147,9 +119,13 @@ contract NGR_with_Grow is Ownable {
         queuePosition = 0;
         grow = IGrow(_grow);
         usdt = IERC20(_usdt);
+        acceptedReturns[4] = true;
+        acceptedReturns[5] = true;
+        acceptedReturns[6] = true;
+        acceptedReturns[7] = true;
+        acceptedReturns[8] = true;
         devWallet = _dev;
         usdt.approve(_grow, type(uint).max);
-        usdt.approve(address(this), type(uint).max);
         burnerWallet = _burner;
         isLiquidator[devWallet] = true;
     }
@@ -161,28 +137,29 @@ contract NGR_with_Grow is Ownable {
     /**
      * @notice Deposit USDT to the contract and buy GROW
      * @param amount Amount of USDT to deposit
-     * @param _autoReinvest Whether to auto reinvest or not
+     * @param liqAmount Liquidation amount in percentage to profit
      */
     function deposit(
         uint amount,
+        uint8 liqAmount,
         bool _autoReinvest
-    ) external checkAmount(amount) {
+    ) external {
+        if (amount % 10 ether != 0) revert NGR_GROW__InvalidDepositAmount();
+        if (amount < MIN_DEPOSIT) revert NGR_GROW__InvalidMinDeposit();
+        if (amount > INIT_MAX_DEPOSIT) {
+            uint tcv = usdt.balanceOf(address(grow));
+            if (tcv > MAX_DEPOSIT_LIMIT) {
+                if (amount > tcv / 10) revert NGR_GROW__InvalidMaxDeposit();
+            } else revert NGR_GROW__InvalidMaxDeposit();
+        }
+        if (!acceptedReturns[liqAmount]) {
+            revert NGR_GROW__InvalidLiquidationAmount();
+        }
         autoReinvest[msg.sender] = _autoReinvest;
-
-        uint currentQueuePos = queuePosition;
-        UserPositions[] storage userMain = userMainDeposits[msg.sender];
-        // First liquidation is stored in the main positions array
-        userMain.push(
-            UserPositions({
-                mainDeposit: amount,
-                liquidationStartPrice: _deposit(msg.sender, msg.sender, amount),
-                positionId: currentQueuePos
-            })
-        );
-
-        userStats[msg.sender].totalDeposited += amount;
-        totalDeposits += amount;
-
+        uint splits = amount / MIN_DEPOSIT;
+        for (uint i = 0; i < splits; i++) {
+            _deposit(msg.sender, msg.sender, MIN_DEPOSIT, liqAmount);
+        }
         if (
             !isLiquidator[msg.sender] &&
             userStats[msg.sender].totalDeposited >= minLiquidatorThreshold
@@ -191,22 +168,31 @@ contract NGR_with_Grow is Ownable {
         }
 
         burnGrow();
+        userStats[msg.sender].totalDeposited += amount;
+        totalDeposits += amount;
     }
 
     function depositForUser(
         uint amount,
+        uint8 liqAmount,
         address _receiver
-    ) external checkAmount(amount) {
-        uint currentQueuePos = queuePosition;
-        UserPositions[] storage userMain = userMainDeposits[_receiver];
-        // First liquidation is stored in the main positions array
-        userMain.push(
-            UserPositions({
-                mainDeposit: amount,
-                liquidationStartPrice: _deposit(_receiver, msg.sender, amount),
-                positionId: currentQueuePos
-            })
-        );
+    ) external {
+        if (amount % 10 ether != 0) revert NGR_GROW__InvalidDepositAmount();
+        if (amount < MIN_DEPOSIT) revert NGR_GROW__InvalidMinDeposit();
+        if (amount > INIT_MAX_DEPOSIT) {
+            uint tcv = usdt.balanceOf(address(grow));
+            if (tcv > MAX_DEPOSIT_LIMIT) {
+                if (amount > tcv / 10) revert NGR_GROW__InvalidMaxDeposit();
+            } else revert NGR_GROW__InvalidMaxDeposit();
+        }
+        if (!acceptedReturns[liqAmount]) {
+            revert NGR_GROW__InvalidLiquidationAmount();
+        }
+        uint splits = amount / MIN_DEPOSIT;
+        for (uint i = 0; i < splits; i++) {
+            _deposit(_receiver, msg.sender, MIN_DEPOSIT, liqAmount);
+        }
+
         burnGrow();
         userStats[msg.sender].totalDeposited += amount;
         totalDeposits += amount;
@@ -241,17 +227,64 @@ contract NGR_with_Grow is Ownable {
         totalLiquidations += totalSell;
     }
 
-    function liquidatePositions(uint[] calldata _positions) external {
+    function liquidateSelf(uint position) external {
+        Position storage liquidatedPos = positions[position];
+        // Check that position is not already liquidated and caller is owner
+        if (liquidatedPos.isLiquidated || liquidatedPos.owner != msg.sender)
+            revert NGR_GROW__InvalidWithdraw();
+
+        // Check that target price is reached
+        uint currentPrice = grow.calculatePrice();
+        if (currentPrice < liquidatedPos.liquidationPrice)
+            revert NGR_GROW__LowPrice();
+
+        liquidatedPos.isLiquidated = true;
+        liquidatedPos.liqTime = block.timestamp;
+
+        uint totalSell = grow.sell(
+            address(this),
+            liquidatedPos.growAmount,
+            address(usdt)
+        );
+        uint maxLiq = ((liquidatedPos.growAmount *
+            liquidatedPos.liquidationPrice) * 96) / (MAGNIFIER * 100);
+
+        uint liquidateUser = totalSell;
+        if (totalSell > maxLiq) {
+            uint diff = (totalSell - maxLiq) / 2;
+            liquidateUser = totalSell - diff;
+            usdt.transfer(devWallet, diff);
+        }
+
+        liquidatedPos.liquidatedAmount = liquidateUser;
+
+        if (autoReinvest[msg.sender]) {
+            uint extra = liquidateUser % MIN_DEPOSIT;
+            liquidateUser -= extra;
+            _deposit(
+                msg.sender,
+                address(this),
+                liquidateUser,
+                liquidatedPos.liquidationPercent
+            );
+            if (extra > 0) usdt.transfer(liquidatedPos.owner, extra);
+        } else {
+            _liquidationToVest(msg.sender, liquidateUser);
+
+            usdt.transfer(liquidatedPos.owner, liquidateUser);
+        }
+
+        totalLiquidations += totalSell;
+        emit LiquidatedSelf(msg.sender, position, totalSell);
+    }
+
+    function liquidateOthers(uint[] calldata _positions) external {
         if (!isLiquidator[msg.sender])
             revert NGR_GROW__LiquidatorMinDepositNotReached();
         uint rewardAccumulator = 0;
         uint accLiquidations = 0;
-        uint accDevProportion = 0;
-        uint positionLiquidated = currentPositionToLiquidate;
         for (uint i = 0; i < _positions.length; i++) {
             uint currentPrice = grow.calculatePrice();
-            if (positionLiquidated < _positions[i])
-                positionLiquidated = _positions[i];
             Position storage liquidatedPos = positions[_positions[i]];
             //If position has laready been liquidated or not reached, then skip.
             // We can't assure that all _positions are in order, so skipping is necessary
@@ -270,47 +303,43 @@ contract NGR_with_Grow is Ownable {
             );
             accLiquidations += totalSell;
 
-            // GET USERS PROFIT
-            uint userProfit = calculateMinProfitAmount(
-                liquidatedPos.amountDeposited
-            );
+            uint maxReturn = ((liquidatedPos.growAmount *
+                liquidatedPos.liquidationPrice) * 96) / (MAGNIFIER * 100);
 
-            uint liquidatorProfit = totalSell - userProfit;
-            uint devProportion = liquidatorProfit / 2;
-            liquidatorProfit -= devProportion;
+            uint diff = maxReturn / PERCENT; // Forced Liquidator Fee (1%)
 
-            rewardAccumulator += liquidatorProfit;
-            accDevProportion += devProportion;
-            userStats[liquidatedPos.owner].totalLiquidated += userProfit;
-            liquidatedPos.liquidatedAmount = userProfit;
+            if (totalSell > maxReturn) diff += totalSell - maxReturn;
 
-            if (autoReinvest[liquidatedPos.owner]) {
-                uint currentQueuePos = queuePosition;
-                UserPositions[] storage userMain = userMainDeposits[
-                    liquidatedPos.owner
-                ];
-                // First liquidation is stored in the main positions array
-                userMain.push(
-                    UserPositions({
-                        mainDeposit: userProfit,
-                        liquidationStartPrice: _deposit(
-                            liquidatedPos.owner,
-                            address(this),
-                            userProfit
-                        ),
-                        positionId: currentQueuePos
-                    })
+            totalSell -= diff;
+            rewardAccumulator += diff;
+            userStats[liquidatedPos.owner].totalLiquidated += totalSell;
+            liquidatedPos.liquidatedAmount = totalSell;
+
+            if (autoReinvest[liquidatedPos.owner])
+                _deposit(
+                    liquidatedPos.owner,
+                    address(this),
+                    totalSell,
+                    liquidatedPos.liquidationPercent
                 );
-            } else usdt.transfer(liquidatedPos.owner, userProfit);
+            else usdt.transfer(liquidatedPos.owner, totalSell);
             emit Liquidated(liquidatedPos.owner, _positions[i], totalSell);
         }
-        currentPositionToLiquidate = positionLiquidated;
-        totalPaidToLiquidators += rewardAccumulator;
         totalLiquidations += accLiquidations;
         userStats[msg.sender].otherLiquidationProfits += rewardAccumulator;
         if (rewardAccumulator > 0) usdt.transfer(msg.sender, rewardAccumulator);
-        if (accDevProportion > 0) usdt.transfer(devWallet, accDevProportion);
         emit LiquidatedOthers(msg.sender, rewardAccumulator, accLiquidations);
+    }
+
+    function claimVestedRewards() external {
+        // If user has no liquidations, revert
+        if (liquidationStats[msg.sender].accLiquidations.length == 0) return;
+        UserLiquidation storage userLiq = liquidationStats[msg.sender];
+        uint lastLiqIndex = userLiq.lastLiqIndex;
+        uint claimTimeDiff = block.timestamp - userLiq.lastClaimTime;
+        if (claimTimeDiff < 10 minutes) {
+            revert NGR_GROW__LiquidationTooFast();
+        }
     }
 
     function setSelfAutoReinvest(bool _autoReinvest) external {
@@ -330,46 +359,71 @@ contract NGR_with_Grow is Ownable {
         minLiquidatorThreshold = _thresholdAmount;
     }
 
-    function changeBurnerWallet(address _newBurner) external onlyOwner {
-        burnerWallet = _newBurner;
-    }
-
-    function setLiquidator(address[] calldata _liquidators) external onlyOwner {
-        for (uint i = 0; i < _liquidators.length; i++) {
-            isLiquidator[_liquidators[i]] = true;
-        }
-    }
-
     //------------------------------------------------
     // Private / Internal Functions
     //------------------------------------------------
     function _deposit(
         address user,
         address sender,
-        uint amount
-    ) private returns (uint liqPrice) {
+        uint amount,
+        uint8 liqAmount
+    ) private {
+        userPositions[user].push(queuePosition);
         usdt.transferFrom(sender, address(grow), amount);
         uint boughtGrow = uint(
             grow.buyFor(address(this), amount, address(usdt))
         );
-        liqPrice = calculateLiquidationPrice(amount, boughtGrow);
+        uint liquidatedPrice = ((amount * (100 + liqAmount)) * MAGNIFIER) /
+            (96 * boughtGrow);
         Position storage created = positions[queuePosition];
         created.depositTime = block.timestamp;
         created.owner = user;
         created.amountDeposited = amount;
         created.growAmount = boughtGrow;
-        created.liquidationPrice = liqPrice;
+        created.liquidationPrice = liquidatedPrice;
+        created.liquidationPercent = liqAmount;
         emit Deposit(user, queuePosition, amount, boughtGrow);
         queuePosition++;
     }
 
+    function _liquidationToVest(address _user, uint amount) private {
+        UserLiquidation storage userLiq = liquidationStats[_user];
+        uint lastLiqIndex = userLiq.lastLiqIndex;
+
+        uint newMaxAcc = amount;
+        uint newSharedAcc = (amount * MAGNIFIER) / (15 days);
+        uint finalTimestamp = block.timestamp + 15 days;
+
+        if (userLiq.accMaxLiquidationValues.length == 0) {
+            userLiq.accMaxLiquidationValues.push(newMaxAcc);
+            userLiq.accLiquidations.push(newSharedAcc);
+            userLiq.lastClaimTime = block.timestamp;
+        } else {
+            uint last = userLiq.accMaxLiquidationValues[lastLiqIndex];
+            userLiq.accMaxLiquidationValues.push(newMaxAcc + last);
+            last = userLiq.accLiquidations[lastLiqIndex];
+            userLiq.accLiquidations.push(newSharedAcc + last);
+        }
+        emit LiquidVesting(_user, amount);
+    }
+
     function burnGrow() private {
         // If not enough funds, return
-        if (burnerAmount == 0 || usdt.balanceOf(burnerWallet) < burnerAmount)
-            return;
+        if (usdt.balanceOf(burnerWallet) < burnerAmount) return;
 
         usdt.transferFrom(burnerWallet, address(this), burnerAmount);
         grow.burnWithUnderlying(burnerAmount, address(usdt));
+    }
+
+    function _claimLiquidations(address _user) private {
+        UserLiquidation storage userLiq = liquidationStats[_user];
+        if (userLiq.accLiquidations.length == 0 || userLiq.lastClaimTime == 0)
+            return;
+        uint lastLiqIndex = userLiq.lastLiqIndex;
+        uint claimTimeDiff = block.timestamp - userLiq.lastClaimTime;
+        uint claimAmount = 0;
+        /// logic to get pending liquidations and claim them.
+        /// not sure what approach to take here...
     }
 
     //------------------------------------------------
@@ -378,23 +432,16 @@ contract NGR_with_Grow is Ownable {
     function getUserPositions(
         address _owner
     ) public view returns (uint[] memory) {
-        uint length = userMainDeposits[_owner].length;
-        uint[] memory allPositions = new uint[](length);
-        for (uint i = 0; i < length; i++) {
-            allPositions[i] = userMainDeposits[_owner][i].positionId;
-        }
-        return allPositions;
+        return userPositions[_owner];
     }
 
     function getUserPositionsInfo(
         address _owner
     ) external view returns (Position[] memory) {
-        uint length = userMainDeposits[_owner].length;
-        Position[] memory positionsInfo = new Position[](length);
-        for (uint i = 0; i < length; i++) {
-            positionsInfo[i] = positions[
-                userMainDeposits[_owner][i].positionId
-            ];
+        uint[] memory userPosIds = getUserPositions(_owner);
+        Position[] memory positionsInfo = new Position[](userPosIds.length);
+        for (uint i = 0; i < userPosIds.length; i++) {
+            positionsInfo[i] = positions[userPosIds[i]];
         }
         return positionsInfo;
     }
@@ -408,27 +455,5 @@ contract NGR_with_Grow is Ownable {
             positionsInfo[i] = positions[startPosition + i];
         }
         return positionsInfo;
-    }
-
-    function getUserMainPositions(
-        address _owner
-    ) external view returns (UserPositions[] memory) {
-        return userMainDeposits[_owner];
-    }
-
-    //------------------------------------------------
-    // Private View PURE Functions
-    //------------------------------------------------
-    function calculateLiquidationPrice(
-        uint depositAmount,
-        uint growAmount
-    ) private pure returns (uint) {
-        return
-            (depositAmount * FULL_TARGET_PROFIT * MAGNIFIER) /
-            (growAmount * GROW_SELL_TOTAL_RCV);
-    }
-
-    function calculateMinProfitAmount(uint amount) private pure returns (uint) {
-        return (amount * FULL_MIN_PROFIT) / PERCENT;
     }
 }

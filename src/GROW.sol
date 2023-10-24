@@ -45,6 +45,9 @@ contract GrowToken is IGrow, ReentrancyGuard, Ownable {
     mapping(address => mapping(address => uint256)) private _allowances;
     mapping(address => Stable) public stables;
     address[] public currentStables;
+    address[] private owners;
+    uint[] private ownerShares;
+    uint private totalOwnerShares;
 
     // 1 GROW Starting Supply
     uint256 public totalSupply = 1 ether;
@@ -75,11 +78,26 @@ contract GrowToken is IGrow, ReentrancyGuard, Ownable {
     /// 3. mint the initial total supply
     /// 4. add all the stables we'll accept
     /// 5. emit Events
-    constructor(address[] memory _stables, address _dev) {
+    constructor(
+        address[] memory _stables,
+        address[] memory _owners,
+        uint[] memory _ownerShares,
+        address _dev
+    ) {
         dev = _dev;
         // fee exempt this + owner
         isFeeExempt[address(this)] = true;
         isFeeExempt[msg.sender] = true;
+        require(_owners.length == _ownerShares.length, "Invalid owners");
+        // set owners
+        for (uint8 i = 0; i < _owners.length; i++) {
+            address ownerSetup = _owners[i];
+            require(ownerSetup != address(0), "Invalid owner");
+            owners.push(ownerSetup);
+            ownerShares.push(_ownerShares[i]);
+            totalOwnerShares += _ownerShares[i];
+            isFeeExempt[msg.sender] = true;
+        }
 
         // allocate one token to dead wallet to ensure total supply never reaches 0
         address dead = 0x000000000000000000000000000000000000dEaD;
@@ -326,6 +344,13 @@ contract GrowToken is IGrow, ReentrancyGuard, Ownable {
     //////  INTERNAL FUNCTIONS  ///////
     ///////////////////////////////////
 
+    function _distributeToOwners(uint256 amount) private {
+        for (uint8 i = 0; i < owners.length; i++) {
+            uint256 share = (amount * ownerShares[i]) / totalOwnerShares;
+            _mint(owners[i], share);
+        }
+    }
+
     /** Requires Price of GROW Token to Rise for The Transaction to Conclude */
     function _requirePriceRises(uint256 oldPrice) internal {
         // price after transaction
@@ -393,19 +418,19 @@ contract GrowToken is IGrow, ReentrancyGuard, Ownable {
         // calculate price change
         uint256 oldPrice = _calculatePrice();
         // fee exempt
-        bool takeFee = isFeeExempt[msg.sender];
+        bool dontTakeFee = isFeeExempt[msg.sender];
 
         uint tokensToSwap;
         // tokens post fee to swap for underlying asset
         _burn(msg.sender, tokenAmount);
-        if (takeFee) {
+        if (dontTakeFee) {
+            require(tokenAmount > 100, "Minimum of 100");
+            tokensToSwap = tokenAmount - 100;
+        } else {
             uint taxFee = (tokenAmount * sellFee) / feeDenominator;
             tokensToSwap = tokenAmount - taxFee;
             taxFee = (taxFee * devShare) / sharesDenominator;
-            _mint(dev, taxFee);
-        } else {
-            require(tokenAmount > 100, "Minimum of 100");
-            tokensToSwap = tokenAmount - 100;
+            _distributeToOwners(taxFee);
         }
 
         // value of taxed tokens
@@ -446,21 +471,21 @@ contract GrowToken is IGrow, ReentrancyGuard, Ownable {
         uint256 oldPrice
     ) private returns (uint) {
         // fee exempt
-        bool takeFee = !isFeeExempt[msg.sender];
+        bool dontTakeFee = isFeeExempt[msg.sender];
         require(received > 0, "No zero buy");
         // find the number of tokens we should mint to keep up with the current price
         // set initial value before deduction
         uint256 tokensToMint = (totalSupply * received) / prevTokenAmount;
         // apply fee to minted tokens to inflate price relative to total supply
-        if (takeFee) {
+        if (dontTakeFee) {
+            tokensToMint -= 100;
+        } else {
             uint256 taxTaken = (tokensToMint * mintFee) / feeDenominator;
             tokensToMint -= taxTaken;
             // allocate dev share - we're reusing variables
             taxTaken = (taxTaken * devShare) / sharesDenominator;
             // mint to dev
-            _mint(dev, taxTaken);
-        } else {
-            tokensToMint -= 100;
+            _distributeToOwners(taxTaken);
         }
 
         // mint to Buyer
