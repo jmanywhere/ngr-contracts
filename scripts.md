@@ -15,4 +15,4 @@
 
 ## Final Deployment script
 
-`forge script script/DeployNGR2.s.sol:DeployNGR2 --private-key $PRIVATE_KEY --rpc-url $TESTNET_RPC_URL --broadcast -vv`
+`forge script script/DeployNGR2.s.sol:DeployNGR2 --private-key $PRIVATE_KEY --rpc-url $TESTNET_RPC_URL --broadcast -vv --verify --etherscan-api-key $BSCSCAN_API `
