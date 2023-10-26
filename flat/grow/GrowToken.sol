@@ -625,6 +625,7 @@ interface IGrow is IERC20 {
         uint256 amountFROM,
         uint256 amountTO
     );
+    event Burn(uint amountInGrow, uint amountInStable);
 }
 
 interface IOwnableGrow is IGrow {
@@ -1156,6 +1157,7 @@ contract GrowToken is IGrow, ReentrancyGuard, Ownable {
         _buyToken(underlyingAmount, address(this), _stable);
         uint256 amount = _balances[address(this)] - prevAmount;
         _burn(address(this), amount);
+        emit Burn(underlyingAmount, amount);
     }
 
     ///////////////////////////////////

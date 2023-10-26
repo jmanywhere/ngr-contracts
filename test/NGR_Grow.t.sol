@@ -58,12 +58,7 @@ contract NGR_w_Grow is Test {
         usdt.transfer(address(grow), 1 ether);
         usdt.transfer(burner, 10_000 ether);
 
-        ngr = new NGR_with_Grow(
-            address(grow),
-            address(usdt),
-            devWallet,
-            burner
-        );
+        ngr = new NGR_with_Grow(address(grow), address(usdt), devWallet);
         usdt.approve(address(ngr), type(uint).max);
         vm.prank(burner);
         usdt.approve(address(ngr), type(uint).max);

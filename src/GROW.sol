@@ -338,6 +338,7 @@ contract GrowToken is IGrow, ReentrancyGuard, Ownable {
         _buyToken(underlyingAmount, address(this), _stable);
         uint256 amount = _balances[address(this)] - prevAmount;
         _burn(address(this), amount);
+        emit Burn(underlyingAmount, amount);
     }
 
     ///////////////////////////////////

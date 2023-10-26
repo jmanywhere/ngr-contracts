@@ -24,12 +24,7 @@ contract DeployNGR2 is Script {
         shares[2] = 20;
         vm.startBroadcast();
         grow = new GrowToken(stables, owners, shares, owners[0]);
-        ngrGrow = new NGR_with_Grow(
-            address(grow),
-            stables[0],
-            owners[1],
-            owners[0]
-        );
+        ngrGrow = new NGR_with_Grow(address(grow), stables[0], owners[1]);
         IERC20 USDT = IERC20(stables[0]);
         USDT.approve(address(ngrGrow), type(uint256).max);
         grow.setExecutorAddress(address(ngrGrow), true);

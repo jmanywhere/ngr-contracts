@@ -109,6 +109,7 @@ interface IGrow is IERC20 {
         uint256 amountFROM,
         uint256 amountTO
     );
+    event Burn(uint amountInGrow, uint amountInStable);
 }
 
 interface IOwnableGrow is IGrow {
