@@ -329,7 +329,7 @@ contract NGR_with_Grow is Ownable {
     //------------------------------------------------
     // State Variables
     //------------------------------------------------
-    mapping(uint posId => Position) public positions;
+    mapping(uint => Position) public positions;
     mapping(address => UserStats) public userStats;
     mapping(address => bool) public autoReinvest;
     mapping(address => bool) public isLiquidator;

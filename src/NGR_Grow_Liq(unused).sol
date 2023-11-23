@@ -48,7 +48,7 @@ contract NGR_with_Grow is Ownable {
     // State Variables
     //------------------------------------------------
     mapping(uint8 => bool) public acceptedReturns;
-    mapping(uint posId => Position) public positions;
+    mapping(uint => Position) public positions;
     mapping(address => uint[]) public userPositions;
     mapping(address => UserStats) public userStats;
     mapping(address => bool) public autoReinvest;
@@ -331,17 +331,6 @@ contract NGR_with_Grow is Ownable {
         emit LiquidatedOthers(msg.sender, rewardAccumulator, accLiquidations);
     }
 
-    function claimVestedRewards() external {
-        // If user has no liquidations, revert
-        if (liquidationStats[msg.sender].accLiquidations.length == 0) return;
-        UserLiquidation storage userLiq = liquidationStats[msg.sender];
-        uint lastLiqIndex = userLiq.lastLiqIndex;
-        uint claimTimeDiff = block.timestamp - userLiq.lastClaimTime;
-        if (claimTimeDiff < 10 minutes) {
-            revert NGR_GROW__LiquidationTooFast();
-        }
-    }
-
     function setSelfAutoReinvest(bool _autoReinvest) external {
         autoReinvest[msg.sender] = _autoReinvest;
         emit SelfAutoReinvest(msg.sender, _autoReinvest);
@@ -392,7 +381,6 @@ contract NGR_with_Grow is Ownable {
 
         uint newMaxAcc = amount;
         uint newSharedAcc = (amount * MAGNIFIER) / (15 days);
-        uint finalTimestamp = block.timestamp + 15 days;
 
         if (userLiq.accMaxLiquidationValues.length == 0) {
             userLiq.accMaxLiquidationValues.push(newMaxAcc);
@@ -413,17 +401,6 @@ contract NGR_with_Grow is Ownable {
 
         usdt.transferFrom(burnerWallet, address(this), burnerAmount);
         grow.burnWithUnderlying(burnerAmount, address(usdt));
-    }
-
-    function _claimLiquidations(address _user) private {
-        UserLiquidation storage userLiq = liquidationStats[_user];
-        if (userLiq.accLiquidations.length == 0 || userLiq.lastClaimTime == 0)
-            return;
-        uint lastLiqIndex = userLiq.lastLiqIndex;
-        uint claimTimeDiff = block.timestamp - userLiq.lastClaimTime;
-        uint claimAmount = 0;
-        /// logic to get pending liquidations and claim them.
-        /// not sure what approach to take here...
     }
 
     //------------------------------------------------
